@@ -62,16 +62,20 @@ sys     0m0.032s
 
 ### Rust Gimli (debug)
 
+```
 $ time ./target/debug/examples/dwarfdump $libc > /dev/null
 
 real    0m12.111s
 user    0m26.364s
 sys     0m0.032s
+```
 
 ### Rust Gimli (stripped release)
 
+```
 $ time ./target/release/examples/dwarfdump $libc > /dev/null
 
 real    0m0.743s
 user    0m1.478s
 sys     0m0.008s
+```
