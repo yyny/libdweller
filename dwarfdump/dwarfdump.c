@@ -183,6 +183,7 @@ static const uint8_t *mapfile(const char *filename, size_t *size) {
     if (fstat(fd, &sb) == -1) goto fail;
     data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
     if (data == MAP_FAILED) goto fail;
+    if (size) *size = sb.st_size;
 
     if (fd != -1) close(fd);
     return data;
@@ -276,5 +277,5 @@ static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struc
 {
     Elf_Ehdr *ehdr = data;
     if (ehdr->e_ident[EI_CLASS] == ELFCLASS32) loadelf32(dwarf, data, size, errinfo);
-    if (ehdr->e_ident[EI_CLASS] == ELFCLASS64) loadelf32(dwarf, data, size, errinfo);
+    if (ehdr->e_ident[EI_CLASS] == ELFCLASS64) loadelf64(dwarf, data, size, errinfo);
 }
