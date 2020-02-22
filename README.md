@@ -29,32 +29,49 @@ the performance thus far.
 
 ![Benchmark plot](./docs/bench.png)
 
-### libdwarf
+### libdweller (debug)
 
 ```
-$ time dwarfdump /usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so > /dev/null
+$ libc="/usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so"
+$ time ./build/dwarfdump/dwarfdump $libc > /dev/null
+
+real    0m2.641s
+user    0m2.565s
+sys     0m0.060s
+```
+
+### libdwarf (stripped)
+
+```
+$ time dwarfdump $libc > /dev/null
 
 real    0m4.132s
 user    0m4.080s
 sys     0m0.048s
 ```
 
-### GNU binutils
+### GNU binutils (stripped)
 
 ```
-$ time readelf --debug /usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so > /dev/null
+$ time readelf --debug $libc > /dev/null
 
 real    0m3.845s
 user    0m3.808s
 sys     0m0.032s
 ```
 
-### libdweller
+### Rust Gimli (debug)
 
-```
-$ time ./build/dwarfdump/dwarfdump /usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so > /dev/null
+$ time ./target/debug/examples/dwarfdump $libc > /dev/null
 
-real    0m2.641s
-user    0m2.565s
-sys     0m0.060s
-```
+real    0m12.111s
+user    0m26.364s
+sys     0m0.032s
+
+### Rust Gimli (stripped release)
+
+$ time ./target/release/examples/dwarfdump $libc > /dev/null
+
+real    0m0.743s
+user    0m1.478s
+sys     0m0.008s

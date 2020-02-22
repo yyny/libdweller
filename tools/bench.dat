@@ -1,3 +1,5 @@
+"gimli-debug", 12.111
 "libdwarf", 4.132
 "GNU binutils", 3.845
 "libdweller", 2.641
+"gimli-release", 0.743
