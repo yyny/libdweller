@@ -14,6 +14,12 @@ $ ninja -C build
 $ ./build/examples/stacktrace
 ```
 
+## Testing
+
+```
+(cd build; meson test --no-rebuild)
+```
+
 ## Performance
 
 This comparison is in no way representative, since dweller is still very

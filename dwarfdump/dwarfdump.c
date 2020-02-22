@@ -17,18 +17,17 @@
  ****************************************************************************/
 #include <dweller/dwarf.h>
 #include <dweller/libc.h>
+#include <dweller/elf.h>
 
 #include <stdint.h>
 
-#include <elf.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-static uint8_t *loadelf(struct dwarf *dwarf, const char *filename, size_t *size, struct dwarf_errinfo *errinfo);
-static void unloadelf(struct dwarf *dwarf, uint8_t *data, size_t size, struct dwarf_errinfo *errinfo);
+static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo);
 
 static void printusage()
 {
@@ -176,6 +175,27 @@ static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
     return DW_CB_OK;
 }
 
+static const uint8_t *mapfile(const char *filename, size_t *size) {
+    uint8_t *data = MAP_FAILED;
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) goto fail;
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) goto fail;
+    data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) goto fail;
+
+    if (fd != -1) close(fd);
+    return data;
+
+fail:
+    if (data != MAP_FAILED) munmap(data, sb.st_size);
+    if (fd != -1) close(fd);
+    return data;
+}
+static void unmapfile(const uint8_t *data, size_t size) {
+    if (data != MAP_FAILED) munmap((void *)data, size);
+}
+
 int main(int argc, const char *argv[])
 {
     if (argc < 2) {
@@ -189,13 +209,14 @@ int main(int argc, const char *argv[])
     dwarf->aranges_cb = aranges_cb;
     dwarf->die_cb = die_cb;
     size_t size = 0;
-    uint8_t *data = loadelf(dwarf, argv[1], &size, &errinfo);
+    uint8_t *data = mapfile(argv[1], &size);
+    loadelf(dwarf, data, size, &errinfo);
     if (data == MAP_FAILED) goto fail;
     dwarf_parse(dwarf, &errinfo);
 
 fail:
     if (data == MAP_FAILED) perror(argv[1]);
-    unloadelf(dwarf, data, size, &errinfo);
+    unmapfile(data, size);
     if (dwarf_has_error(&errinfo)) {
         dwarf_write_error(&errinfo, &dweller_libc_stderr_writer);
     }
@@ -203,15 +224,32 @@ fail:
     return 0;
 }
 
-static uint8_t *loadelf(struct dwarf *dwarf, const char *filename, size_t *size, struct dwarf_errinfo *errinfo)
+static void loadelf32(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
 {
-    uint8_t *data = MAP_FAILED;
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) goto fail;
-    struct stat sb;
-    if (fstat(fd, &sb) == -1) goto fail;
-    data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) goto fail;
+    Elf32_Ehdr *ehdr = data;
+    Elf32_Shdr *strh = data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
+    char *strs = data + strh->sh_offset;
+    printf("num sections: %d\n", ehdr->e_shnum);
+    Elf32_Half i;
+    for (i=0; i < ehdr->e_shnum; i++) {
+        Elf32_Shdr *shdr = data + ehdr->e_shoff + (i * ehdr->e_shentsize);
+        char *name = &strs[shdr->sh_name];
+        printf("0x%016x:", shdr->sh_offset);
+        printf("%#8x:", shdr->sh_type);
+        printf("'%s'", name);
+        printf("\n");
+        struct dwarf_section section;
+        section.base = data + shdr->sh_offset;
+        section.size = shdr->sh_size;
+        if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ABBREV, section, errinfo);
+        else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ARANGES, section, errinfo);
+        else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(dwarf, DWARF_SECTION_INFO, section, errinfo);
+        else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(dwarf, DWARF_SECTION_LINE, section, errinfo);
+        else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(dwarf, DWARF_SECTION_STR, section, errinfo);
+    }
+}
+static void loadelf64(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
+{
     Elf64_Ehdr *ehdr = data;
     Elf64_Shdr *strh = data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
     char *strs = data + strh->sh_offset;
@@ -233,16 +271,10 @@ static uint8_t *loadelf(struct dwarf *dwarf, const char *filename, size_t *size,
         else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(dwarf, DWARF_SECTION_LINE, section, errinfo);
         else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(dwarf, DWARF_SECTION_STR, section, errinfo);
     }
-
-    if (size) *size = sb.st_size;
-    if (fd != -1) close(fd);
-    return data;
-
-fail:
-    if (data != MAP_FAILED) munmap(data, sb.st_size);
-    if (fd != -1) close(fd);
-    return data;
 }
-static void unloadelf(struct dwarf *dwarf, uint8_t *data, size_t size, struct dwarf_errinfo *errinfo) {
-    if (data != MAP_FAILED) munmap(data, size);
+static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
+{
+    Elf_Ehdr *ehdr = data;
+    if (ehdr->e_ident[EI_CLASS] == ELFCLASS32) loadelf32(dwarf, data, size, errinfo);
+    if (ehdr->e_ident[EI_CLASS] == ELFCLASS64) loadelf32(dwarf, data, size, errinfo);
 }
