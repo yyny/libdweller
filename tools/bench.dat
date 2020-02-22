@@ -1,5 +1,6 @@
-"gimli-debug", 12.111
+# "gimli\n(debug)", 12.111
 "libdwarf", 4.132
 "GNU binutils", 3.845
-"libdweller", 2.641
-"gimli-release", 0.743
+"libdweller\n(legacy)", 2.641
+"gimli\n(release)", 0.743
+"libdweller", 0.641

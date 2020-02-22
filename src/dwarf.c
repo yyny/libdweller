@@ -96,14 +96,10 @@ static void append_row(struct dwarf *dwarf, struct dwarf_line_program *program, 
 }
 static void reset_state(struct dwarf *dwarf, struct dwarf_line_program *program, struct dwarf_line_program_state *state)
 {
-    state->address = 0;
+    memset(state, 0x00, sizeof(*state));
     state->file = 1;
     state->line = 1;
-    state->column = 0;
-    state->discriminator = 0;
     state->is_stmt = program->default_is_stmt;
-    state->basic_block = false;
-    state->end_sequence = false;
 }
 static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_line *line, struct dwarf_errinfo *errinfo)
 {

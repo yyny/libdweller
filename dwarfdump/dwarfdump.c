@@ -27,6 +27,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define ARRAYSIZE(arr) (sizeof(arr) / sizeof(*arr))
+
 static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo);
 
 static void printusage()
@@ -34,85 +36,248 @@ static void printusage()
     puts("USAGE: dwarfdump <object file>");
 }
 
-static void indent(int n)
-{
-    for (; n; n--) printf(" ");
+/* Static buffer shared between all printers
+ * ( To race against Gimli c: )
+ */
+static char buffer[4096];
+size_t buffersz = 0;
+
+static void put(char c) {
+    buffer[buffersz++] = c;
+}
+static void putcstr(const char *str) {
+    for (; *str; str++) put(*str);
+}
+static void putindent(int n) {
+    for (; n; n--) put(' ');
+}
+static void putint(uint64_t val, int padleft) {
+    char strbuf[20]; /* ceil(log10(2 ** 64)) = 20 */
+    size_t strsz = 0;
+    char *str = strbuf + ARRAYSIZE(strbuf);
+    do {
+        *--str = '0' + (val % 10);
+        strsz++;
+        val /= 10;
+    } while (val);
+    padleft -= strsz;
+    while (padleft-- > 0) buffer[buffersz++] = ' ';
+    memcpy(buffer + buffersz, str, strsz);
+    buffersz += strsz;
+}
+static void puthex(uint64_t val, int padleft) {
+    char strbuf[16]; /* ceil(log16(2 ** 64)) = 16 */
+    size_t strsz = 0;
+    char *str = strbuf + ARRAYSIZE(strbuf);
+    putcstr("0x");
+    do {
+        *--str = "0123456789abcdef"[val % 16];
+        strsz++;
+        val /= 16;
+    } while (val);
+    padleft -= strsz;
+    while (padleft-- > 0) buffer[buffersz++] = ' ';
+    memcpy(buffer + buffersz, str, strsz);
+    buffersz += strsz;
+}
+static void puthex2(uint64_t val, int padleft) {
+    char strbuf[16]; /* ceil(log16(2 ** 64)) = 16 */
+    size_t strsz = 0;
+    char *str = strbuf + ARRAYSIZE(strbuf);
+    putcstr("0x");
+    do {
+        *--str = "0123456789abcdef"[val % 16];
+        strsz++;
+        val /= 16;
+    } while (val);
+    if (strsz % 2 != 0) {
+        *--str = '0';
+        strsz++;
+    }
+    padleft -= strsz;
+    while (padleft-- > 0) buffer[buffersz++] = ' ';
+    memcpy(buffer + buffersz, str, strsz);
+    buffersz += strsz;
+}
+static void putaddr32(uint64_t val) {
+    int i;
+    putcstr("0x");
+    for (i=0; i < 8; i++) {
+        int hexdgt = (val >> (64 - i*4 - 4)) & 0xf;
+        put("0123456789abcdef"[hexdgt]);
+    }
+}
+static void putaddr64(uint64_t val) {
+    int i;
+    putcstr("0x");
+    for (i=0; i < 16; i++) {
+        int hexdgt = (val >> (64 - i*4 - 4)) & 0xf;
+        put("0123456789abcdef"[hexdgt]);
+    }
+}
+#define putaddr(val) putaddr32(val) /* FIXME: Figure this out depending on DWARF32 or DWARF64 */
+static void puturi(const char *path) {
+    /* TODO */
+    /* TODO: Also do bounds checking on buffersz */
+    putcstr(path);
 }
 
 static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_program *program, struct dwarf_line_program_state *state, struct dwarf_line_program_state *last_state)
 {
-    printf("0x%08zx  [%4u, %u]", state->address, state->line, state->column);
-    if (state->is_stmt) printf(" NS");
-    if (state->basic_block) printf(" BB");
-    if (state->end_sequence) printf(" ET");
-    if (state->prologue_end) printf(" PE");
-    if (state->epilogue_begin) printf(" EB");
-    if (state->isa != last_state->isa) printf(" IS=%x", state->isa);
-    if (state->discriminator) printf(" DI=%#x", state->discriminator);
+    putaddr(state->address);
+    putcstr(" [");
+    putint(state->line, 4);
+    putcstr(", ");
+    putint(state->column, 0);
+    putcstr("]");
+    if (state->is_stmt) putcstr(" NS");
+    if (state->basic_block) putcstr(" BB");
+    if (state->end_sequence) putcstr(" ET");
+    if (state->prologue_end) putcstr(" PE");
+    if (state->epilogue_begin) putcstr(" EB");
+    if (state->isa != last_state->isa) { putcstr(" IS="); puthex(state->isa, 0); }
+    if (state->discriminator) { putcstr(" DI="); puthex(state->discriminator, 0); }
     if (state->file != last_state->file) {
         const char *path = dwarf->line.section.base + program->files[state->file - 1].name; /* FIXME: Check that state->file is actually valid and not out of bounds */
-        printf(" uri: \"%s\"", path); /* FIXME: String escapes? */
+        putcstr(" uri: \"");
+        puturi(path);
+        put('\"');
     }
-    printf("\n");
+    put('\n');
+    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
     return DW_CB_OK;
 }
 static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program *program)
 {
     size_t i;
-    printf(" Opcodes:\n");
+    putcstr(" Opcodes:\n");
     for (i=0; i < program->num_basic_opcodes - 1; i++) {
-        printf("  Opcode 0x%02x has %u argument(s)\n", i + 1, program->basic_opcode_argcount[i]);
+        putcstr("  Opcode ");
+        puthex2(i + 1, 0);
+        putcstr(" has ");
+        putint(program->basic_opcode_argcount[i], 0);
+        putcstr(" argument(s)\n");
     }
-    printf("\n");
-    printf(" The Include Directory Table\n");
+    put('\n');
+    putcstr(" The Include Directory Table\n");
     for (i=0; i < program->num_include_directories; i++) {
         const char *path = dwarf->line.section.base + program->include_directories[i];
-        printf("  %zu\t%s\n", i, path);
+        putcstr("  ");
+        putint(i, 0);
+        put('\t');
+        puturi(path);
+        put('\n');
     }
-    printf("\n");
-    printf(" The File Information Table\n");
-    printf("  Entry\tDir\tTime\tSize\tName\n");
+    put('\n');
+    putcstr(" The File Information Table\n");
+    putcstr("  Entry\tDir\tTime\tSize\tName\n");
     for (i=0; i < program->num_files; i++) {
         struct dwarf_fileinfo *info = &program->files[i];
         const char *path = dwarf->line.section.base + info->name;
-        printf("  %zu\t", i + 1);
-        printf("%zu\t", info->include_directory_idx);
-        printf("%zd\t", info->last_modification_time);
-        printf("%zd\t", info->file_size);
-        printf("%s\n", path);
+        putcstr("  ");
+        putint(i + 1, 0);
+        put('\t');
+        putint(info->include_directory_idx, 0);
+        put('\t');
+        putint(info->last_modification_time, 0);
+        put('\t');
+        putint(info->file_size, 0);
+        put('\t');
+        puturi(path);
+        put('\n');
     }
-    printf("\n");
+    put('\n');
+    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+
     program->line_row_cb = line_row_cb;
     return DW_CB_OK;
 }
 static enum dw_cb_status abbrev_cb(struct dwarf *dwarf, dwarf_abbrev_t *abbrev)
 {
-    const char *tagname = dwarf_get_symbol_name(DW_TAG, abbrev->tag);
-    printf("Defining abid 0x%02x as tag %s (0x%02x) [%s]\n", abbrev->abbrev_code, tagname, abbrev->tag, abbrev->has_children ? "has children" : "no children");
+    const char *tag_name = dwarf_get_symbol_name(DW_TAG, abbrev->tag);
+    putcstr("Defining abbreviation code ");
+    puthex2(abbrev->abbrev_code, 0);
+    putcstr(" as tag ");
+    if (tag_name) {
+        putcstr(tag_name);
+    } else {
+        put('<');
+        puthex2(abbrev->tag, 0);
+        put('>');
+    }
+    putcstr(abbrev->has_children ? " [has children]" : " [no children]");
+    put('\n');
+
     return DW_CB_OK;
 }
 static enum dw_cb_status abbrev_attr_cb(struct dwarf *dwarf, dwarf_abbrev_t *abbrev, dwarf_abbrev_attr_t *attr)
 {
     const char *attr_name = dwarf_get_symbol_name(DW_AT, attr->name);
     const char *form_name = dwarf_get_symbol_name(DW_FORM, attr->form);
-    printf("  %s (0x%02x): %s (0x%02x)\n", attr_name, attr->name, form_name, attr->form);
+    putcstr("  ");
+    if (attr_name) {
+        putcstr(attr_name);
+    } else {
+        put('<');
+        puthex2(attr->name, 0);
+        put('>');
+    }
+    putcstr(": ");
+    if (form_name) {
+        putcstr(form_name);
+    } else {
+        put('<');
+        puthex2(attr->form, 0);
+        put('>');
+    }
+    put('\n');
+
     return DW_CB_OK;
 }
 
 static enum dw_cb_status arange_cb(struct dwarf *dwarf, dwarf_aranges_t *aranges, dwarf_arange_t *arange)
 {
-    printf("  [%lu] 0x%016lx - 0x%016lx | 0x%06lx (%zu bytes)\n", arange->segment, arange->base, arange->base + arange->size, arange->size, arange->size);
+    putcstr("  [");
+    putint(arange->segment, 0);
+    putcstr("] ");
+    putaddr64(arange->base);
+    putcstr(" - ");
+    putaddr64(arange->base + arange->size);
+    putcstr(" | ");
+    puthex2(arange->size, 0);
+    putcstr(" (");
+    putint(arange->size, 0);
+    putcstr(" bytes)");
+    put('\n');
+
     return DW_CB_OK;
 }
 static enum dw_cb_status aranges_cb(struct dwarf *dwarf, dwarf_aranges_t *aranges)
 {
-    printf("  Length:                   %zu\n", aranges->length);
-    printf("  Version:                  %zu\n", aranges->version);
-    printf("  Offset:                   0x%08zx\n", aranges->debug_info_offset);
-    printf("  Pointer Size:             0x%08zx\n", aranges->address_size);
-    printf("  Segment Size:             0x%08zx\n", aranges->segment_size);
-    printf("\n");
-    printf("  Seg From                 To                   Length\n");
+    putcstr("  Length:                   ");
+    putint(aranges->length, 0);
+    put('\n');
+
+    putcstr("  Version:                  ");
+    putint(aranges->version, 0);
+    put('\n');
+
+    putcstr("  Offset:                   ");
+    putaddr(aranges->debug_info_offset);
+    put('\n');
+
+    putcstr("  Pointer Size:             ");
+    putaddr(aranges->address_size);
+    put('\n');
+
+    putcstr("  Segment Size:             ");
+    putaddr(aranges->segment_size);
+    put('\n');
+
+    put('\n');
+    putcstr("  Seg From                 To                   Length\n");
+    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+
     aranges->arange_cb = arange_cb;
     return DW_CB_OK;
 }
@@ -120,14 +285,20 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
 {
     const char *attr_name = dwarf_get_symbol_name(DW_AT, attr->name);
     const char *form_name = dwarf_get_symbol_name(DW_FORM, attr->form);
-    indent(die->depth * 2);
-    printf("  [%s] = ", attr_name);
+    putindent(die->depth * 2);
+    putcstr(" [");
+    if (attr_name) {
+        putcstr(attr_name);
+    } else {
+        puthex2(attr->name, 0);
+    }
+    putcstr("] = ");
     switch (attr->form) {
     case DW_FORM_flag_present:
-        printf("true (implicit)");
+        putcstr("true (implicit)");
         break;
     case DW_FORM_flag:
-        printf("%s", attr->value.b ? "true" : "false");
+        putcstr(attr->value.b ? "true" : "false");
         break;
     case DW_FORM_data1:
     case DW_FORM_ref1:
@@ -137,40 +308,72 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
     case DW_FORM_ref4:
     case DW_FORM_data8:
     case DW_FORM_ref8:
-        printf("0x%02x", attr->value.val);
+        puthex2(attr->value.val, 0);
         break;
     case DW_FORM_addr:
-        printf("%p", attr->value.addr);
+        putaddr64(attr->value.addr);
         break;
     case DW_FORM_sec_offset:
-        printf("0x%02x", attr->value.off);
+        puthex2(attr->value.off, 0);
         break;
     case DW_FORM_string:
-        printf("'%s'", attr->value.cstr);
+        put('\'');
+        putcstr(attr->value.cstr);
+        put('\'');
         break;
     case DW_FORM_strp:
         {
             const char *str = dwarf->str.section.base + attr->value.stroff;
-            printf("'%s' (offset %#02x)", str, attr->value.stroff);
+            put('\'');
+            putcstr(str);
+            putcstr("\' (offset ");
+            puthex2(attr->value.stroff, 0);
+            put(')');
         }
         break;
     case DW_FORM_exprloc:
         { /* TODO */
-            printf("???");
+            putcstr("???");
         }
         break;
     }
-    printf(" # %s (0x%02x): %s (0x%02x)\n", attr_name, attr->name, form_name, attr->form);
+    putcstr(" # FORM: ");
+    if (form_name) {
+        putcstr(form_name);
+    } else {
+        puthex2(attr->form, 0);
+    }
+    put('\n');
+    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
     return DW_CB_OK;
 }
 static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
 {
     dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, die->abbrev_table, die->abbrev_code);
-    indent(die->depth * 2); printf("<%x>\n", die->section_offset);
-    indent(die->depth * 2); printf("@abid: 0x%02x\n", die->abbrev_code);
-    indent(die->depth * 2); printf("@offset: 0x%x\n", abbrev->offset);
-    indent(die->depth * 2); printf("@depth: %d\n", die->depth);
-    indent(die->depth * 2); printf("@tag: %s%s\n", dwarf_get_symbol_name(DW_TAG, die->tag), die->has_children ? " [has children]" : " [no children]");
+    const char *tag_name = dwarf_get_symbol_name(DW_TAG, die->tag);
+    putindent(die->depth * 2);
+    put('<');
+    puthex2(die->section_offset, 0);
+    put('>');
+    if (tag_name) {
+        put(' ');
+        putcstr(tag_name);
+        putcstr(die->has_children ? " [has children]" : " [no children]");
+    }
+    put('\n');
+
+    putindent(die->depth * 2 + 2);
+    putcstr(".abbrev_code: ");
+    puthex2(die->abbrev_code, 0);
+    put('\n');
+
+    putindent(die->depth * 2 + 2);
+    putcstr(".abbrev_offset: ");
+    puthex2(abbrev->offset, 0);
+    put('\n');
+
+    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+
     die->attr_cb = attr_cb;
     return DW_CB_OK;
 }
