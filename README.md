@@ -40,15 +40,15 @@ user    0m2.565s
 sys     0m0.060s
 ```
 
-### libdweller (release, with noprintf patch)
+### libdweller (release, latest version)
 
 ```
 $ libc="/usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so"
 $ time ./build/dwarfdump/dwarfdump $libc > /dev/null
 
-real    0m0.641s
-user    0m0.559s
-sys     0m0.080s
+real    0m0.587s
+user    0m0.554s
+sys     0m0.024s
 ```
 
 ### libdwarf (stripped)
