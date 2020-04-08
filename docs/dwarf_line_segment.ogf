@@ -1,0 +1,48 @@
+#encoding binary
+
+#import dwarf_types
+#import dwarf_symbols
+
+#parser line_section
+
+line_segment # An ELF `.debug_line` segment
+    line_section+
+
+file
+    (
+        cstr # file name
+        leb128 # include directory index
+        leb128 # file age
+        leb128 # file size
+    )
+
+line_section
+    (
+        u32 # length
+        u16 # version
+        u32 # prologue length
+        u8 # instruction size
+        u8 # default is_stmt
+        i8 # line base
+        u8 # line range
+        $<numops>u8 # num basic opcodes
+        <argcnt>u8{<numops>} # basic opcodes argument count
+        cstr* %0 # 0-terminated list of include directories
+        file* %0 # 0-terminated list of file names
+        line_program
+    )
+
+line_program
+    opcode+
+
+opcode
+    %0 !DW_LNE_end_sequence extended_opcode
+    <basic_opcode>(%1.<numops>) @expr(<argcnt>[<basic_opcode>])
+    special_opcode
+
+special_opcode
+    @expr(<numops> + %1).%xff
+
+extended_opcode
+    $<length>leb128
+    u8{<length>}

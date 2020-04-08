@@ -1,0 +1,18 @@
+#encoding binary
+
+cstr
+    (%1.%xff)+ %0
+
+u7
+    %0.%x7f
+u8
+    %0.%xff
+u16
+    u8{%2}
+u32
+    u8{%4}
+u64
+    u8{%8}
+
+leb128
+    (%x80.%xff)+ u7
