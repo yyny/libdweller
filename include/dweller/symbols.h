@@ -183,6 +183,44 @@ enum dwarf_symbol_namespace {
     SYMBOL(deleted,                  0x8a) /* DWARF5 */ \
     SYMBOL(defaulted,                0x8b) /* DWARF5 */ \
     SYMBOL(loclists_base,            0x8c) /* DWARF5 */
+#define DW_LANG_SYMBOLS(SYMBOL) \
+    SYMBOL(C89,            0x0001) \
+    SYMBOL(C,              0x0002) \
+    SYMBOL(Ada83,          0x0003) \
+    SYMBOL(C_plus_plus,    0x0004) \
+    SYMBOL(Cobol74,        0x0005) \
+    SYMBOL(Cobol85,        0x0006) \
+    SYMBOL(Fortran77,      0x0007) \
+    SYMBOL(Fortran90,      0x0008) \
+    SYMBOL(Pascal83,       0x0009) \
+    SYMBOL(Modula2,        0x000a) \
+    SYMBOL(Java,           0x000b) \
+    SYMBOL(C99,            0x000c) \
+    SYMBOL(Ada95,          0x000d) \
+    SYMBOL(Fortran95,      0x000e) \
+    SYMBOL(PLI,            0x000f) \
+    SYMBOL(ObjC,           0x0010) \
+    SYMBOL(ObjC_plus_plus, 0x0011) \
+    SYMBOL(UPC,            0x0012) \
+    SYMBOL(D,              0x0013) \
+    SYMBOL(Python,         0x0014) \
+    SYMBOL(OpenCL,         0x0015) /* DWARF5 */ \
+    SYMBOL(Go,             0x0016) /* DWARF5 */ \
+    SYMBOL(Modula3,        0x0017) /* DWARF5 */ \
+    SYMBOL(Haskell,        0x0018) /* DWARF5 */ \
+    SYMBOL(C_plus_plus_03, 0x0019) /* DWARF5 */ \
+    SYMBOL(C_plus_plus_11, 0x001a) /* DWARF5 */ \
+    SYMBOL(OCaml,          0x001b) /* DWARF5 */ \
+    SYMBOL(Rust,           0x001c) /* DWARF5 */ \
+    SYMBOL(C11,            0x001d) /* DWARF5 */ \
+    SYMBOL(Swift,          0x001e) /* DWARF5 */ \
+    SYMBOL(Julia,          0x001f) /* DWARF5 */ \
+    SYMBOL(Dylan,          0x0020) /* DWARF5 */ \
+    SYMBOL(C_plus_plus_14, 0x0021) /* DWARF5 */ \
+    SYMBOL(Fortran03,      0x0022) /* DWARF5 */ \
+    SYMBOL(Fortran08,      0x0023) /* DWARF5 */ \
+    SYMBOL(RenderScript,   0x0024) /* DWARF5 */ \
+    SYMBOL(BLISS,          0x0025) /* DWARF5 */
 #define DW_TAG_SYMBOLS(SYMBOL) \
     SYMBOL(array_type,                0x01) \
     SYMBOL(class_type,                0x02) \
@@ -252,10 +290,72 @@ enum dwarf_symbol_namespace {
     SYMBOL(call_site_parameter,       0x49) /* DWARF5 */ \
     SYMBOL(skeleton_unit,             0x4a) /* DWARF5 */ \
     SYMBOL(immutable_type,            0x4b) /* DWARF5 */
+#define DW_ORD_SYMBOLS(SYMBOL) \
+    SYMBOL(row_major, 0x00)    \
+    SYMBOL(col_major, 0x01)
 
+#define DW_ACCESS_SYMBOLS(SYMBOL) \
+    SYMBOL(public,    0x01)       \
+    SYMBOL(protected, 0x02)       \
+    SYMBOL(private,   0x03)
+#define DW_ATE_SYMBOLS(SYMBOL) \
+    SYMBOL(address,         0x01) \
+    SYMBOL(boolean,         0x02) \
+    SYMBOL(complex_float,   0x03) \
+    SYMBOL(float,           0x04) \
+    SYMBOL(signed,          0x05) \
+    SYMBOL(signed_char,     0x06) \
+    SYMBOL(unsigned,        0x07) \
+    SYMBOL(unsigned_char,   0x08) \
+    SYMBOL(imaginary_float, 0x09) \
+    SYMBOL(packed_decimal,  0x0a) \
+    SYMBOL(numeric_string,  0x0b) \
+    SYMBOL(edited,          0x0c) \
+    SYMBOL(signed_fixed,    0x0d) \
+    SYMBOL(unsigned_fixed,  0x0e) \
+    SYMBOL(decimal_float,   0x0f) \
+    SYMBOL(UTF,             0x10) \
+    SYMBOL(UCS,             0x11) /* DWARF5 */ \
+    SYMBOL(ASCII,           0x12) /* DWARF5 */
+#define DW_CC_SYMBOLS(SYMBOL) \
+    SYMBOL(normal,            0x01) \
+    SYMBOL(program,           0x02) \
+    SYMBOL(nocall,            0x03) \
+    SYMBOL(pass_by_reference, 0x04) /* DWARF5 */ \
+    SYMBOL(pass_by_value,     0x05) /* DWARF5 */
+#define DW_CFA_SYMBOLS(SYMBOL)      /* Operand 1        | Operand 2 (or lower 6 bits) */ \
+    SYMBOL(advance_loc,        0x40) /*                  | 0b01------ : DELTA          */ \
+    SYMBOL(offset,             0x80) /* ULEB128 offset   | 0b10------ : REGISTER       */ \
+    SYMBOL(restore,            0xC0) /*                  | 0b11------ : REGISTER       */ \
+    SYMBOL(nop,                0x00) /*                  |                             */ \
+    SYMBOL(set_loc,            0x01) /* address          |                             */ \
+    SYMBOL(advance_loc1,       0x02) /* 1-byte delta     |                             */ \
+    SYMBOL(advance_loc2,       0x03) /* 2-byte delta     |                             */ \
+    SYMBOL(advance_loc4,       0x04) /* 4-byte delta     |                             */ \
+    SYMBOL(offset_extended,    0x05) /* ULEB128 register | ULEB128 offset              */ \
+    SYMBOL(restore_extended,   0x06) /* ULEB128 register |                             */ \
+    SYMBOL(undefined,          0x07) /* ULEB128 register |                             */ \
+    SYMBOL(same_value,         0x08) /* ULEB128 register |                             */ \
+    SYMBOL(register,           0x09) /* ULEB128 register | ULEB128 offset              */ \
+    SYMBOL(remember_state,     0x0a) /*                  |                             */ \
+    SYMBOL(restore_state,      0x0b) /*                  |                             */ \
+    SYMBOL(def_cfa,            0x0c) /* ULEB128 register | ULEB128 offset              */ \
+    SYMBOL(def_cfa_register,   0x0d) /* ULEB128 register |                             */ \
+    SYMBOL(def_cfa_offset,     0x0e) /* ULEB128 offset   |                             */ \
+    SYMBOL(def_cfa_expression, 0x0f) /* BLOCK            |                             */ \
+    SYMBOL(expression,         0x10) /* ULEB128 register | BLOCK                       */ \
+    SYMBOL(offset_extended_sf, 0x11) /* ULEB128 register | SLEB128 offset              */ \
+    SYMBOL(def_cfa_sf,         0x12) /* ULEB128 register | SLEB128 offset              */ \
+    SYMBOL(def_cfa_offset_sf,  0x13) /* SLEB128 offset   |                             */ \
+    SYMBOL(val_offset,         0x14) /* ULEB128          | ULEB128                     */ \
+    SYMBOL(val_offset_sf,      0x15) /* ULEB128          | SLEB128                     */ \
+    SYMBOL(val_expression,     0x16) /* ULEB128          | BLOCK                       */
 #define DW_CHILDREN_SYMBOLS(SYMBOL) \
     SYMBOL(no,   0x00)              \
     SYMBOL(yes,  0x01)
+#define DW_DSC_SYMBOLS(SYMBOL) \
+    SYMBOL(label, 0x00)        \
+    SYMBOL(range, 0x01)
 #define DW_FORM_SYMBOLS(SYMBOL) \
     SYMBOL(addr,            0x01) \
     SYMBOL(block2,          0x03) \
@@ -300,6 +400,16 @@ enum dwarf_symbol_namespace {
     SYMBOL(addrx2,          0x2a) /* DWARF5 */ \
     SYMBOL(addrx3,          0x2b) /* DWARF5 */ \
     SYMBOL(addrx4,          0x2c) /* DWARF5 */
+#define DW_ID_SYMBOLS(SYMBOL) \
+    SYMBOL(case_sensitive,   0x00) \
+    SYMBOL(up_case,          0x01) \
+    SYMBOL(down_case,        0x02) \
+    SYMBOL(case_insensitive, 0x03)
+#define DW_INL_SYMBOLS(SYMBOL) \
+    SYMBOL(not_inlined,          0x00) \
+    SYMBOL(inlined,              0x01) \
+    SYMBOL(declared_not_inlined, 0x02) \
+    SYMBOL(declared_inlined,     0x03)
 #define DW_LNE_SYMBOLS(SYMBOL) \
     SYMBOL(end_sequence,       0x01) \
     SYMBOL(set_address,        0x02) \
@@ -318,11 +428,115 @@ enum dwarf_symbol_namespace {
     SYMBOL(set_prologue_end,    0x0a) /* DWARF3 */ \
     SYMBOL(set_epilogue_begin,  0x0b) /* DWARF3 */ \
     SYMBOL(set_isa,             0x0c) /* DWARF3 */
+#define DW_MACINFO_SYMBOLS(SYMBOL) \
+    SYMBOL(define,     0x01)       \
+    SYMBOL(undef,      0x02)       \
+    SYMBOL(start_file, 0x03)       \
+    SYMBOL(end_file,   0x04)
+#define DW_OP_SYMBOLS(SYMBOL) \
+    /*                                   . : # of operands                                          */ \
+    /*                                   v                                                          */ \
+    /*     Reserved             0x01                                                                */ \
+    /*     Reserved             0x02                                                                */ \
+    SYMBOL(addr,                0x03) /* 1 | constant address (size is target specific)             */ \
+    /*     Reserved             0x04                                                                */ \
+    /*     Reserved             0x05                                                                */ \
+    SYMBOL(deref,               0x06) /* 0                                                          */ \
+    /*     Reserved             0x07                                                                */ \
+    SYMBOL(const1u,             0x08) /* 1 | 1-byte constant                                        */ \
+    SYMBOL(const1s,             0x09) /* 1 | 1-byte constant                                        */ \
+    SYMBOL(const2u,             0x0a) /* 1 | 2-byte constant                                        */ \
+    SYMBOL(const2s,             0x0b) /* 1 | 2-byte constant                                        */ \
+    SYMBOL(const4u,             0x0c) /* 1 | 4-byte constant                                        */ \
+    SYMBOL(const4s,             0x0d) /* 1 | 4-byte constant                                        */ \
+    SYMBOL(const8u,             0x0e) /* 1 | 8-byte constant                                        */ \
+    SYMBOL(const8s,             0x0f) /* 1 | 8-byte constant                                        */ \
+    SYMBOL(constu,              0x10) /* 1 | ULEB128 constant                                       */ \
+    SYMBOL(consts,              0x11) /* 1 | SLEB128 constant                                       */ \
+    SYMBOL(dup,                 0x12) /* 0 |                                                        */ \
+    SYMBOL(drop,                0x13) /* 0 |                                                        */ \
+    SYMBOL(over,                0x14) /* 0 |                                                        */ \
+    SYMBOL(pick,                0x15) /* 1 | 1-byte stack index                                     */ \
+    SYMBOL(swap,                0x16) /* 0 |                                                        */ \
+    SYMBOL(rot,                 0x17) /* 0 |                                                        */ \
+    SYMBOL(xderef,              0x18) /* 0 |                                                        */ \
+    SYMBOL(abs,                 0x19) /* 0 |                                                        */ \
+    SYMBOL(and,                 0x1a) /* 0 |                                                        */ \
+    SYMBOL(div,                 0x1b) /* 0 |                                                        */ \
+    SYMBOL(minus,               0x1c) /* 0 |                                                        */ \
+    SYMBOL(mod,                 0x1d) /* 0 |                                                        */ \
+    SYMBOL(mul,                 0x1e) /* 0 |                                                        */ \
+    SYMBOL(neg,                 0x1f) /* 0 |                                                        */ \
+    SYMBOL(not,                 0x20) /* 0 |                                                        */ \
+    SYMBOL(or,                  0x21) /* 0 |                                                        */ \
+    SYMBOL(plus,                0x22) /* 0 |                                                        */ \
+    SYMBOL(plus_uconst,         0x23) /* 1 | ULEB128 addend                                         */ \
+    SYMBOL(shl,                 0x24) /* 0 |                                                        */ \
+    SYMBOL(shr,                 0x25) /* 0 |                                                        */ \
+    SYMBOL(shra,                0x26) /* 0 |                                                        */ \
+    SYMBOL(xor,                 0x27) /* 0 |                                                        */ \
+    SYMBOL(bra,                 0x28) /* 1 | signed 2-byte constant                                 */ \
+    SYMBOL(eq,                  0x29) /* 0 |                                                        */ \
+    SYMBOL(ge,                  0x2a) /* 0 |                                                        */ \
+    SYMBOL(gt,                  0x2b) /* 0 |                                                        */ \
+    SYMBOL(le,                  0x2c) /* 0 |                                                        */ \
+    SYMBOL(lt,                  0x2d) /* 0 |                                                        */ \
+    SYMBOL(ne,                  0x2e) /* 0 |                                                        */ \
+    SYMBOL(skip,                0x2f) /* 1 | signed 2-byte constant                                 */ \
+    SYMBOL(lit0,                0x30) /* 0 |                                                        */ \
+    SYMBOL(lit1,                0x31) /* 0 | literals 0 .. 31 = . . . (DW_OP_lit0 + literal)        */ \
+    SYMBOL(lit31,               0x4f) /* 0 |                                                        */ \
+    SYMBOL(reg0,                0x50) /* 0 |                                                        */ \
+    SYMBOL(reg1,                0x51) /* 0 | reg 0 .. 31 = . . . (DW_OP_reg0 + regnum)              */ \
+    SYMBOL(reg31,               0x6f) /* 0 |                                                        */ \
+    SYMBOL(breg0,               0x70) /* 1 | SLEB128 offset                                         */ \
+    SYMBOL(breg1,               0x71) /* 1 | base register 0 .. 31 = ... (DW_OP_breg0 + regnum)     */ \
+    SYMBOL(breg31,              0x8f) /* 1 |                                                        */ \
+    SYMBOL(regx,                0x90) /* 1 | ULEB128 register                                       */ \
+    SYMBOL(fbreg,               0x91) /* 1 | SLEB128 offset                                         */ \
+    SYMBOL(bregx,               0x92) /* 2 | ULEB128 register, SLEB128 offset                       */ \
+    SYMBOL(piece,               0x93) /* 1 | ULEB128 size of piece                                  */ \
+    SYMBOL(deref_size,          0x94) /* 1 | 1-byte size of data retrieved                          */ \
+    SYMBOL(xderef_size,         0x95) /* 1 | 1-byte size of data retrieved                          */ \
+    SYMBOL(nop,                 0x96) /* 0 |                                                        */ \
+    SYMBOL(push_object_address, 0x97) /* 0 |                                                        */ \
+    SYMBOL(call2,               0x98) /* 1 | 2-byte offset of DIE                                   */ \
+    SYMBOL(call4,               0x99) /* 1 | 4-byte offset of DIE                                   */ \
+    SYMBOL(call_ref,            0x9a) /* 1 | 4- or 8-byte offset of DIE                             */ \
+    SYMBOL(form_tls_address,    0x9b) /* 0 |                                                        */ \
+    SYMBOL(call_frame_cfa,      0x9c) /* 0 |                                                        */ \
+    SYMBOL(bit_piece,           0x9d) /* 2 | ULEB128 size, ULEB128 offset                           */ \
+    SYMBOL(implicit_value,      0x9e) /* 2 | ULEB128 size, block of that size                       */ \
+    SYMBOL(stack_value,         0x9f) /* 0 |                                                        */ \
+    /* DWARF5 */                                                                                       \
+    SYMBOL(implicit_pointer,    0xa0) /* 2 | 4- or 8-byte offset of DIE, SLEB128 constant offset    */ \
+    SYMBOL(addrx,               0xa1) /* 1 | ULEB128 indirect address                               */ \
+    SYMBOL(constx,              0xa2) /* 1 | ULEB128 indirect constant                              */ \
+    SYMBOL(entry_value,         0xa3) /* 2 | ULEB128 size, block of that size                       */ \
+    SYMBOL(const_type,          0xa4) /* 3 | ULEB128 type entry offset, 1-byte size, constant value */ \
+    SYMBOL(regval_type,         0xa5) /* 2 | ULEB128 register number, ULEB128 constant offset       */ \
+    SYMBOL(deref_type,          0xa6) /* 2 | 1-byte size, ULEB128 type entry offset                 */ \
+    SYMBOL(xderef_type,         0xa7) /* 2 | 1-byte size, ULEB128 type entry offset                 */ \
+    SYMBOL(convert,             0xa8) /* 1 | ULEB128 type entry offset                              */ \
+    SYMBOL(reinterpret,         0xa9) /* 1 | ULEB128 type entry offset                              */
+#define DW_VIRTUALITY_SYMBOLS(SYMBOL) \
+    SYMBOL(none,         0x00)        \
+    SYMBOL(virtual,      0x01)        \
+    SYMBOL(pure_virtual, 0x02)
 #define DW_VIS_SYMBOLS(SYMBOL) \
     SYMBOL(local,      0x00)   \
     SYMBOL(exported,   0x01)   \
     SYMBOL(qualified,  0x02)
-
+#define DW_DS_SYMBOLS(SYMBOL) \
+    SYMBOL(unsigned,           0x01) \
+    SYMBOL(leading_overpunch,  0x02) \
+    SYMBOL(trailing_overpunch, 0x03) \
+    SYMBOL(leading_separate,   0x04) \
+    SYMBOL(trailing_separate,  0x05)
+#define DW_END_SYMBOLS(SYMBOL) \
+    SYMBOL(default, 0x00)      \
+    SYMBOL(big,     0x01)      \
+    SYMBOL(little,  0x02)
 #define DW_UT_SYMBOLS(SYMBOL) \
     SYMBOL(compile,        0x01) \
     SYMBOL(type,           0x02) \
@@ -383,8 +597,28 @@ enum dwarf_symbol_namespace {
 #define DW_FORM_GNU_ref_alt    0x1f20 /* GNU extension. Offset in .debug_info. */
 #define DW_FORM_GNU_strp_alt   0x1f21 /* GNU extension. Offset in .debug_str of another object file. */
 
+#define DW_ATE_lo_user 0x80
+#define DW_ATE_hi_user 0xff
+
+#define DW_CC_lo_user 0x40
+#define DW_CC_hi_user 0xff
+
+#define DW_CFA_lo_user 0 0x1c
+#define DW_CFA_hi_user 0 0x3f
+
+#define DW_LANG_lo_user 0x8000
+#define DW_LANG_hi_user 0xffff
+
 #define DW_LNE_lo_user                  0x80 /* DWARF3 */
 #define DW_LNE_hi_user                  0xff /* DWARF3 */
+
+#define DW_OP_lo_user 0xe0
+#define DW_OP_hi_user 0xff
+
+#define DW_END_lo_user 0x40
+#define DW_END_hi_user 0xff
+
+#define DW_MACINFO_vendor_ext 0xff
 
 /* HP extensions. */
 #define DW_LNE_HP_negate_is_UV_update      0x11 /* 17 HP */

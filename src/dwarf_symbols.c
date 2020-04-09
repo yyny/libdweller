@@ -15,82 +15,94 @@
  * limitations under the License.
  *
  ****************************************************************************/
+#include <dweller/symbols.h>
+
+#define DW_SYMCASE_AT(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_AT_")         #NAME;
+#define DW_SYMCASE_LANG(NAME, VALUE)       case VALUE: return DW_SYMPREFIX("DW_LANG_")       #NAME;
+#define DW_SYMCASE_TAG(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_TAG_")        #NAME;
+#define DW_SYMCASE_ORD(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_ORD_")        #NAME;
+#define DW_SYMCASE_ACCESS(NAME, VALUE)     case VALUE: return DW_SYMPREFIX("DW_ACCESS_")     #NAME;
+#define DW_SYMCASE_ATE(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_ATE_")        #NAME;
+#define DW_SYMCASE_CC(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_CC_")         #NAME;
+#define DW_SYMCASE_CFA(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_CFA_")        #NAME;
+#define DW_SYMCASE_CHILDREN(NAME, VALUE)   case VALUE: return DW_SYMPREFIX("DW_CHILDREN_")   #NAME;
+#define DW_SYMCASE_DSC(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_DSC_")        #NAME;
+#define DW_SYMCASE_FORM(NAME, VALUE)       case VALUE: return DW_SYMPREFIX("DW_FORM_")       #NAME;
+#define DW_SYMCASE_ID(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_ID_")         #NAME;
+#define DW_SYMCASE_INL(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_INL_")        #NAME;
+#define DW_SYMCASE_LNE(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_LNE_")        #NAME;
+#define DW_SYMCASE_LNS(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_LNS_")        #NAME;
+#define DW_SYMCASE_MACINFO(NAME, VALUE)    case VALUE: return DW_SYMPREFIX("DW_MACINFO_")    #NAME;
+#define DW_SYMCASE_OP(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_OP_")         #NAME;
+#define DW_SYMCASE_VIRTUALITY(NAME, VALUE) case VALUE: return DW_SYMPREFIX("DW_VIRTUALITY_") #NAME;
+#define DW_SYMCASE_VIS(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_VIS_")        #NAME;
+#define DW_SYMCASE_DS(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_DS_")         #NAME;
+#define DW_SYMCASE_END(NAME, VALUE)        case VALUE: return DW_SYMPREFIX("DW_END_")        #NAME;
+#define DW_SYMCASE_UT(NAME, VALUE)         case VALUE: return DW_SYMPREFIX("DW_UT_")         #NAME;
+
+#define DW_SYMNSCASE(NAME) case DW_##NAME: switch (value) { DW_##NAME##_SYMBOLS(DW_SYMCASE_##NAME) } break
 
 inline const char *dwarf_get_symbol_name(enum dwarf_symbol_namespace ns, dw_symval_t value)
 {
-#define DW_SYMCASE(NAME, VALUE) case VALUE: return "DW_" DW_PREFIX "_" #NAME;
+#define DW_SYMPREFIX(x) x
     switch (ns) {
-    case DW_AT:
-        switch (value) {
-#define DW_PREFIX "AT"
-            DW_AT_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
-    case DW_TAG:
-        switch (value) {
-#define DW_PREFIX "TAG"
-            DW_TAG_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
-    case DW_FORM:
-        switch (value) {
-#define DW_PREFIX "FORM"
-            DW_FORM_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
-    case DW_LNE:
-        switch (value) {
-#define DW_PREFIX "LNE"
-            DW_LNE_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
-    case DW_LNS:
-        switch (value) {
-#define DW_PREFIX "LNS"
-            DW_LNS_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
-    case DW_VIS:
-        switch (value) {
-#define DW_PREFIX "VIS"
-            DW_VIS_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-        break;
+    DW_SYMNSCASE(AT);
+    DW_SYMNSCASE(LANG);
+    DW_SYMNSCASE(TAG);
+    DW_SYMNSCASE(ORD);
+    DW_SYMNSCASE(ACCESS);
+    DW_SYMNSCASE(ATE);
+    DW_SYMNSCASE(CC);
+    DW_SYMNSCASE(CFA);
+    DW_SYMNSCASE(CHILDREN);
+    DW_SYMNSCASE(DSC);
+    DW_SYMNSCASE(FORM);
+    DW_SYMNSCASE(ID);
+    DW_SYMNSCASE(INL);
+    DW_SYMNSCASE(LNE);
+    DW_SYMNSCASE(LNS);
+    DW_SYMNSCASE(MACINFO);
+    DW_SYMNSCASE(OP);
+    DW_SYMNSCASE(VIRTUALITY);
+    DW_SYMNSCASE(VIS);
+    DW_SYMNSCASE(DS);
+    DW_SYMNSCASE(END);
+    DW_SYMNSCASE(UT);
+    case DW_EH: break;
     }
-#undef DW_SYMCASE
     return NULL;
+#undef DW_SYMPREFIX
 }
 inline const char *dwarf_get_symbol_shortname(enum dwarf_symbol_namespace ns, dw_symval_t value)
 {
-#define DW_SYMCASE(NAME, VALUE) case VALUE: return #NAME;
+#define DW_SYMPREFIX(x)
     switch (ns) {
-    case DW_AT:
-        switch (value) {
-#define DW_PREFIX "AT"
-            DW_AT_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-    case DW_TAG:
-        switch (value) {
-#define DW_PREFIX "TAG"
-            DW_TAG_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
-    case DW_FORM:
-        switch (value) {
-#define DW_PREFIX "FORM"
-            DW_FORM_SYMBOLS(DW_SYMCASE)
-#undef DW_PREFIX
-        }
+    DW_SYMNSCASE(AT);
+    DW_SYMNSCASE(LANG);
+    DW_SYMNSCASE(TAG);
+    DW_SYMNSCASE(ORD);
+    DW_SYMNSCASE(ACCESS);
+    DW_SYMNSCASE(ATE);
+    DW_SYMNSCASE(CC);
+    DW_SYMNSCASE(CFA);
+    DW_SYMNSCASE(CHILDREN);
+    DW_SYMNSCASE(DSC);
+    DW_SYMNSCASE(FORM);
+    DW_SYMNSCASE(ID);
+    DW_SYMNSCASE(INL);
+    DW_SYMNSCASE(LNE);
+    DW_SYMNSCASE(LNS);
+    DW_SYMNSCASE(MACINFO);
+    DW_SYMNSCASE(OP);
+    DW_SYMNSCASE(VIRTUALITY);
+    DW_SYMNSCASE(VIS);
+    DW_SYMNSCASE(DS);
+    DW_SYMNSCASE(END);
+    DW_SYMNSCASE(UT);
+    case DW_EH: break;
     }
-#undef DW_SYMCASE
     return NULL;
+#undef DW_SYMPREFIX
 }
 
 struct dwarf_line_opcode {
