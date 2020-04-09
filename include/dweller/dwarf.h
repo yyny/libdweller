@@ -55,6 +55,8 @@ enum dw_cb_status {
 };
 
 struct dwarf;
+struct dwarf_line_program;
+struct dwarf_line_program_state;
 
 typedef enum dw_cb_status (*dw_line_cb_t)(struct dwarf *dwarf, struct dwarf_line_program *program) dw_nonnull(1, 2);
 typedef enum dw_cb_status (*dw_line_row_cb_t)(struct dwarf *dwarf, struct dwarf_line_program *program, struct dwarf_line_program_state *state, struct dwarf_line_program_state *last_state) dw_nonnull(1, 2, 3, 4);

@@ -34,7 +34,7 @@ static dwarf_die_t *dwarf_die_new(struct dwarf *dwarf, struct dwarf_errinfo *err
     if (!allocator) {
         error(no_allocator_error("failed to allocate compilation unit"));
     };
-    int status = (*allocator)(allocator, &allocation_request, &die);
+    int status = (*allocator)(allocator, &allocation_request, (void **)&die);
     if (dw_unlikely(status < 0 || !dwarf)) {
         error(allocator_error(allocator, sizeof(dwarf_die_t), die, "failed to allocate compilation unit"));
     }

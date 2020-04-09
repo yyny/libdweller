@@ -18,6 +18,33 @@
 #ifndef DWELLER_COMPILER_H
 #define DWELLER_COMPILER_H
 
+#ifdef __GNUC__
+#define dw_unlikely(b) __builtin_expect(!!(b),0)
+#define dw_likely(b)   __builtin_expect(!!(b),1)
+#define dw_unreachable __builtin_unreachable()
+
+#define dw_nonnull_result
+#define dw_nonnull(...) __attribute__((nonnull(__VA_ARGS__)))
+#define dw_mustuse __attribute__((warn_unused_result))
+#define dw_unused __attribute__((unused))
+
+#define dw_isnull(x) \
+    ({ \
+        _Pragma("GCC diagnostic push") \
+        _Pragma("GCC diagnostic ignored \"-Wnonnull-compare\"") \
+        _Pragma("GCC diagnostic ignored \"-Waddress\"") \
+        bool res_ = (x); \
+        _Pragma("GCC diagnostic pop") \
+        res_; \
+    })
+#define DW_USE(x) \
+    ({ \
+        _Pragma("GCC diagnostic push") \
+        _Pragma("GCC diagnostic ignored \"-Wunused-result\"") \
+        dw_unused __auto_type res_ = (x); \
+        _Pragma("GCC diagnostic pop") \
+    })
+#else
 #define dw_unlikely(b) (b)
 #define dw_likely(b) (b)
 #define dw_unreachable
@@ -26,5 +53,15 @@
 #define dw_nonnull(...)
 #define dw_mustuse
 #define dw_unused
+#endif
+
+#define DW_UNUSED(x) ((void)(x))
+
+#ifndef dw_isnull
+#define dw_isnull(x) (x)
+#endif
+#ifndef DW_USE
+#define DW_USE(x) DW_UNUSED(x)
+#endif
 
 #endif /* DWELLER_COMPILER_H */

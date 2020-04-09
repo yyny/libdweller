@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include <elf.h>
 #include <unistd.h>
@@ -70,7 +71,7 @@ static enum dw_cb_status my_die_attr_cb(struct dwarf *dwarf, dwarf_die_t *die, d
     }
     if (attr->name == DW_AT_name) {
         if (attr->form == DW_FORM_strp) {
-            fun.name = dwarf->str.section.base + attr->value.stroff;
+            fun.name = (char *)dwarf->str.section.base + attr->value.stroff;
         } else if (attr->form == DW_FORM_string) {
             fun.name = attr->value.cstr;
         }
@@ -93,7 +94,7 @@ static enum dw_cb_status my_die_attr_cb(struct dwarf *dwarf, dwarf_die_t *die, d
         for (i=0; i < num_return_addresses; i++) {
             if (symbols[i].location != current_location) continue;
             void *retaddr = return_addresses[i];
-            void *retrela = return_addresses[i] - current_location->base;
+            void *retrela = retaddr - current_location->base;
 #if 0
             /* Uncomment this if you want to print the location of _all_ symbols */
             printf("Found a function between %p and %p called '%s' in file %zu line %zu\n", fun.low_pc, fun.low_pc + fun.high_pc, fun.name, fun.decl_file, fun.decl_line);
@@ -128,7 +129,7 @@ static enum dw_cb_status my_line_cb(struct dwarf *dwarf, struct dwarf_line_progr
         if (symbols[i].location != current_location) continue;
         dw_off_t line_offset = symbols[i].fun.line_offset;
         if (line_offset == program->section_offset) {
-            symbols[i].fun.filename = dwarf->line.section.base + program->files[symbols[i].fun.decl_file - 1].name;
+            symbols[i].fun.filename = (char *)dwarf->line.section.base + program->files[symbols[i].fun.decl_file - 1].name;
         }
     }
     return DW_CB_NEXT;
@@ -137,22 +138,21 @@ static enum dw_cb_status my_line_cb(struct dwarf *dwarf, struct dwarf_line_progr
 static int
 callback(struct dl_phdr_info *info, size_t size, void *ud)
 {
-    int i, j, k;
+    size_t i, j, k;
     const char *soname = info->dlpi_name;
     if (soname[0] == '\0') soname = "/proc/self/exe";
 
     for (k = 0; k < info->dlpi_phnum; k++) {
         const ElfW(Phdr) *phdr = &info->dlpi_phdr[k];
-        ElfW(Word) p_type = phdr->p_type;
         if (phdr->p_type != PT_LOAD) continue;
         if ((phdr->p_flags & PF_X) == 0) continue;
 
         for (j=0; j < num_return_addresses; j++) {
             void *retaddr = return_addresses[j];
-            if (retaddr >= info->dlpi_addr + phdr->p_vaddr && retaddr < info->dlpi_addr + phdr->p_vaddr + phdr->p_memsz) {
+            if (retaddr >= (void *)info->dlpi_addr + phdr->p_vaddr && retaddr < (void *)info->dlpi_addr + phdr->p_vaddr + phdr->p_memsz) {
                 struct symbol_location *location = NULL;
-                printf("Address %p (%zu) is in %s, at offset 0x%zx!\n", retaddr, j, soname, retaddr - (info->dlpi_addr + phdr->p_vaddr));
-                printf("This section was mapped at 0x%zx + 0x%zx\n", info->dlpi_addr, phdr->p_vaddr);
+                printf("Address %p (%zu) is in %s, at offset 0x%"PRIxPTR"!\n", retaddr, j, soname, (uintptr_t)(retaddr - (info->dlpi_addr + phdr->p_vaddr)));
+                printf("This section was mapped at 0x%zx + 0x%"PRIxPTR"\n", info->dlpi_addr, (uintptr_t)phdr->p_vaddr);
                 for (i=0; i < num_symbol_locations; i++) {
                     struct symbol_location *locptr = &symbol_locations[i];
                     if (strcmp(soname, locptr->name) == 0) {
@@ -264,29 +264,29 @@ void backtrace_print_stacktrace(void) {
         struct symbol_location *location = &symbol_locations[i];
         current_location = location;
         dwarf_init(&location->dwarf, &dweller_libc_allocator, &location->errinfo);
-        Elf64_Ehdr *ehdr = location->data;
+        Elf64_Ehdr *ehdr = (Elf64_Ehdr *)location->data;
         Elf64_Half i;
         for (i=0; i < ehdr->e_phnum; i++) {
-            Elf64_Phdr *phdr = location->data + ehdr->e_phoff + (i * ehdr->e_phentsize);
+            Elf64_Phdr *phdr = (Elf64_Phdr *)(location->data + ehdr->e_phoff + (i * ehdr->e_phentsize));
             Elf64_Word p_flags = phdr->p_flags;
             char prots[4];
             prots[0] = (p_flags & PF_R) ? 'r' : '-';
             prots[1] = (p_flags & PF_W) ? 'w' : '-';
             prots[2] = (p_flags & PF_X) ? 'x' : '-';
             prots[3] = 'p';
-            printf("0x%06x: %4s ", phdr->p_offset, prots);
-            printf("0x%06x+%zu/0x%06x+%zu", phdr->p_vaddr, phdr->p_filesz, phdr->p_paddr, phdr->p_memsz);
+            printf("0x%06zx: %4s ", (size_t)phdr->p_offset, prots);
+            printf("0x%06"PRIxPTR"+%zu/0x%06"PRIxPTR"+%zu", (uintptr_t)phdr->p_vaddr, phdr->p_filesz, (uintptr_t)phdr->p_paddr, phdr->p_memsz);
             printf("(0x%02x)", phdr->p_type);
             printf("\n");
         }
-        Elf64_Shdr *strh = location->data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
-        char *strs = location->data + strh->sh_offset;
+        Elf64_Shdr *strh = (Elf64_Shdr *)(location->data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
+        char *strs = (char *)(location->data + strh->sh_offset);
         printf("num sections: %d\n", ehdr->e_shnum);
         for (i=0; i < ehdr->e_shnum; i++) {
-            Elf64_Shdr *shdr = location->data + ehdr->e_shoff + (i * ehdr->e_shentsize);
+            Elf64_Shdr *shdr = (Elf64_Shdr *)(location->data + ehdr->e_shoff + (i * ehdr->e_shentsize));
             char *name = &strs[shdr->sh_name];
-            printf("0x%06x-", shdr->sh_offset);
-            printf("0x%06x ( %-6zu )", shdr->sh_offset + shdr->sh_size, shdr->sh_size);
+            printf("0x%06zx-", (size_t)shdr->sh_offset);
+            printf("0x%06zx ( %-6zu )", (size_t)shdr->sh_offset + shdr->sh_size, shdr->sh_size);
             printf(" [%s (0x%02x)]", name, shdr->sh_type);
             printf("\n");
             struct dwarf_section section;

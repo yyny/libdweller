@@ -19,7 +19,7 @@
 #define DWELLER_UTIL_H
 #include <dweller/dwarf.h>
 
-static void *dw_malloc(struct dwarf *dwarf, size_t capacity)
+static dw_unused void *dw_malloc(struct dwarf *dwarf, size_t capacity)
 {
     void *ptr = NULL;
     struct dwarf_alloc_req req = {
@@ -30,11 +30,11 @@ static void *dw_malloc(struct dwarf *dwarf, size_t capacity)
     };
 
     dw_alloc_t *allocator = dwarf->allocator;
-    (void)(*allocator)(allocator, &req, &ptr);
+    if ((*allocator)(allocator, &req, &ptr) < 0) return NULL;
 
     return ptr;
 }
-static void *dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacity)
+static dw_unused void *dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacity)
 {
     struct dwarf_alloc_req req = {
         capacity,
@@ -44,11 +44,11 @@ static void *dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacity)
     };
 
     dw_alloc_t *allocator = dwarf->allocator;
-    (void)(*allocator)(allocator, &req, &ptr);
+    if ((*allocator)(allocator, &req, &ptr) < 0) return NULL;
 
     return ptr;
 }
-static void dw_free(struct dwarf *dwarf, void *ptr)
+static dw_unused void dw_free(struct dwarf *dwarf, void *ptr)
 {
     static struct dwarf_alloc_req req = {
         0,
@@ -58,6 +58,6 @@ static void dw_free(struct dwarf *dwarf, void *ptr)
     };
 
     dw_alloc_t *allocator = dwarf->allocator;
-    (void)(*allocator)(allocator, &req, &ptr);
+    DW_USE((*allocator)(allocator, &req, &ptr));
 }
 #endif /* DWELLER_UTIL_H */

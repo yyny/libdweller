@@ -34,7 +34,6 @@ inline const char *dwarf_get_symbol_name(enum dwarf_symbol_namespace ns, dw_symv
 #undef DW_PREFIX
         }
         break;
-
     case DW_FORM:
         switch (value) {
 #define DW_PREFIX "FORM"

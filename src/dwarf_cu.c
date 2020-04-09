@@ -38,7 +38,7 @@ static dwarf_cu_t *dwarf_cu_new(struct dwarf *dwarf, struct dwarf_errinfo *errin
     if (!allocator) {
         error(no_allocator_error("failed to allocate compilation unit"));
     };
-    int status = (*allocator)(allocator, &allocation_request, &cu);
+    int status = (*allocator)(allocator, &allocation_request, (void **)&cu);
     if (dw_unlikely(status < 0 || !dwarf)) {
         error(allocator_error(allocator, sizeof(dwarf_cu_t), cu, "failed to allocate compilation unit"));
     }

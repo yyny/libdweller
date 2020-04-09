@@ -48,7 +48,7 @@ static inline uint64_t get64(struct Parser *parser) {
     parser->cur += sizeof(uint64_t);
     return result;
 }
-static inline uint64_t getvar64(struct Parser *parser, dw_mustuse int *shift_out) {
+static inline uint64_t getvar64(struct Parser *parser, int *shift_out) {
     uint64_t result = 0;
     int shift = 0;
     while (true) {

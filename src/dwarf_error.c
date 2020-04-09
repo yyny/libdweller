@@ -143,7 +143,6 @@ bool dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer)
     char buffer[] = "Unknown error: 0x%%";
     size_t offset = 0;
     while (buffer[offset] != '%') offset++;
-    size_t i;
     if (info->err_code < DW_ARRAYSIZE(dwarf_error_format_strings)) {
         const char *fmt = dwarf_error_format_strings[info->err_code];
         return dwarf_write_error_format(info, &fmt, writer, 0, 0);

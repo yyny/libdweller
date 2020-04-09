@@ -19,6 +19,7 @@
 #include <dweller/libc.h>
 #include <dweller/elf.h>
 
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -44,7 +45,19 @@ static char buffer[4096 * 4096];
 static size_t buffersz = 0;
 
 #define output(data, size) do { if (buffersz >= 4096 * 4096 - 4096 * 2) flushoutput(data, size); } while (0)
-#define flushoutput(data, size) do { write(STDOUT_FILENO, data, size); buffersz = 0; } while (0)
+static void flushoutput(const char *data, size_t size)
+{
+    int nwritten = 0;
+    do {
+        int res = write(STDOUT_FILENO, data, size);
+        if (res == -1) {
+            if (errno == EINTR || errno == EAGAIN) continue;
+            abort();
+        }
+        nwritten += res;
+    } while (nwritten < size);
+    buffersz = 0;
+}
 
 #define putlit(str) \
     do { \
@@ -149,7 +162,7 @@ static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_prog
     if (state->isa != last_state->isa) { putlit(" IS="); puthex(state->isa, 0); }
     if (state->discriminator) { putlit(" DI="); puthex(state->discriminator, 0); }
     if (state->file != last_state->file) {
-        const char *path = dwarf->line.section.base + program->files[state->file - 1].name; /* FIXME: Check that state->file is actually valid and not out of bounds */
+        const char *path = (const char *)dwarf->line.section.base + program->files[state->file - 1].name; /* FIXME: Check that state->file is actually valid and not out of bounds */
         putlit(" uri: \"");
         puturi(path);
         put('\"');
@@ -172,7 +185,7 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
     put('\n');
     putlit(" The Include Directory Table\n");
     for (i=0; i < program->num_include_directories; i++) {
-        const char *path = dwarf->line.section.base + program->include_directories[i];
+        const char *path = (const char *)dwarf->line.section.base + program->include_directories[i];
         putlit("  ");
         putint(i, 0);
         put('\t');
@@ -184,7 +197,7 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
     putlit("  Entry\tDir\tTime\tSize\tName\n");
     for (i=0; i < program->num_files; i++) {
         struct dwarf_fileinfo *info = &program->files[i];
-        const char *path = dwarf->line.section.base + info->name;
+        const char *path = (const char *)dwarf->line.section.base + info->name;
         putlit("  ");
         putint(i + 1, 0);
         put('\t');
@@ -330,7 +343,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         puthex2(attr->value.val, 0);
         break;
     case DW_FORM_addr:
-        putaddr64(attr->value.addr);
+        putaddr64((uint64_t)attr->value.addr);
         break;
     case DW_FORM_sec_offset:
         puthex2(attr->value.off, 0);
@@ -342,7 +355,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         break;
     case DW_FORM_strp:
         {
-            const char *str = dwarf->str.section.base + attr->value.stroff;
+            const char *str = (const char *)dwarf->str.section.base + attr->value.stroff;
             put('\'');
             putcstr(str);
             putlit("\' (offset ");
@@ -435,8 +448,10 @@ int main(int argc, const char *argv[])
     dwarf->line_cb = line_cb;
     dwarf->aranges_cb = aranges_cb;
     dwarf->die_cb = die_cb;
+    dwarf->abbrev_cb = abbrev_cb;
+    dwarf->abbrev_attr_cb = abbrev_attr_cb;
     size_t size = 0;
-    uint8_t *data = mapfile(argv[1], &size);
+    const uint8_t *data = mapfile(argv[1], &size);
     loadelf(dwarf, data, size, &errinfo);
     if (data == MAP_FAILED) goto fail;
     dwarf_parse(dwarf, &errinfo);
@@ -454,14 +469,14 @@ fail:
 
 static void loadelf32(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
 {
-    Elf32_Ehdr *ehdr = data;
-    Elf32_Shdr *strh = data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
-    char *strs = data + strh->sh_offset;
+    Elf32_Ehdr *ehdr = (Elf32_Ehdr *)data;
+    Elf32_Shdr *strh = (Elf32_Shdr *)(data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
+    const char *strs = (const char *)(data + strh->sh_offset);
     printf("num sections: %d\n", ehdr->e_shnum);
     Elf32_Half i;
     for (i=0; i < ehdr->e_shnum; i++) {
-        Elf32_Shdr *shdr = data + ehdr->e_shoff + (i * ehdr->e_shentsize);
-        char *name = &strs[shdr->sh_name];
+        Elf32_Shdr *shdr = (Elf32_Shdr *)(data + ehdr->e_shoff + (i * ehdr->e_shentsize));
+        const char *name = &strs[shdr->sh_name];
         printf("0x%016x:", shdr->sh_offset);
         printf("%#8x:", shdr->sh_type);
         printf("'%s'", name);
@@ -478,15 +493,15 @@ static void loadelf32(struct dwarf *dwarf, const uint8_t *data, size_t size, str
 }
 static void loadelf64(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
 {
-    Elf64_Ehdr *ehdr = data;
-    Elf64_Shdr *strh = data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
-    char *strs = data + strh->sh_offset;
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)(data);
+    Elf64_Shdr *strh = (Elf64_Shdr *)(data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
+    const char *strs = (const char *)(data + strh->sh_offset);
     printf("num sections: %d\n", ehdr->e_shnum);
     Elf64_Half i;
     for (i=0; i < ehdr->e_shnum; i++) {
-        Elf64_Shdr *shdr = data + ehdr->e_shoff + (i * ehdr->e_shentsize);
-        char *name = &strs[shdr->sh_name];
-        printf("0x%016x:", shdr->sh_offset);
+        Elf64_Shdr *shdr = (Elf64_Shdr *)(data + ehdr->e_shoff + (i * ehdr->e_shentsize));
+        const char *name = &strs[shdr->sh_name];
+        printf("0x%016zx:", (size_t)shdr->sh_offset);
         printf("%#8x:", shdr->sh_type);
         printf("'%s'", name);
         printf("\n");
@@ -502,7 +517,7 @@ static void loadelf64(struct dwarf *dwarf, const uint8_t *data, size_t size, str
 }
 static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
 {
-    Elf_Ehdr *ehdr = data;
+    Elf_Ehdr *ehdr = (Elf_Ehdr *)data;
     if (ehdr->e_ident[EI_CLASS] == ELFCLASS32) loadelf32(dwarf, data, size, errinfo);
     if (ehdr->e_ident[EI_CLASS] == ELFCLASS64) loadelf64(dwarf, data, size, errinfo);
 }

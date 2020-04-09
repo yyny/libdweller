@@ -15,6 +15,8 @@
  * limitations under the License.
  *
  ****************************************************************************/
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull-compare"
 #include <dweller/dwarf.h>
 #include <dweller/util.h>
 #include "dwarf_compat.h"
@@ -167,9 +169,9 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
             state.discriminator = false;
         } else if (basic_opcode == DW_LNS_fixed_advance_pc) { /* See docs */
             int address_increment = get16(&parser);
+            state.address += address_increment;
         } else if (basic_opcode) { /* This is a basic opcode */
             uint8_t i;
-            const char *name = dwarf_get_symbol_name(DW_LNS, basic_opcode);
             uint64_t nargs = lineprg->basic_opcode_argcount[basic_opcode - 1]; /* Array is 1-indexed */
             uint64_t *args = dw_malloc(dwarf, nargs * sizeof(uint64_t));
             for (i=0; i < nargs; i++) {
@@ -228,7 +230,6 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
             uint64_t i;
             uint64_t extended_opcode_length = getvar64(&parser, NULL);
             uint8_t extended_opcode = get8(&parser);
-            const char *extended_opcode_name = dwarf_get_symbol_name(DW_LNE, extended_opcode);
             assert(extended_opcode_length != 0);
             uint8_t *args = dw_malloc(dwarf, extended_opcode_length - 1);
             for (i=0; i < extended_opcode_length - 1; i++) {
@@ -426,7 +427,7 @@ static bool dwarf_parse_compilation_unit_from_abreviation_table(struct dwarf *dw
                 attr.value.off = get32(parser);
                 break;
             case DW_FORM_string:
-                attr.value.cstr = parser->cur;
+                attr.value.cstr = (char *)parser->cur;
                 while (get8(parser));
                 break;
             case DW_FORM_strp:
@@ -650,10 +651,11 @@ void dwarf_fini(struct dwarf **dwarf, const struct dwarf_errinfo *errinfo)
 
     dw_alloc_t *allocator = (*dwarf)->allocator;
     if (allocator) {
-        (void)(*allocator)(allocator, &deallocation_request, (void **)dwarf);
+        DW_USE((*allocator)(allocator, &deallocation_request, (void **)dwarf));
         /* ^ Ignore status for deallocation call */
         /* Give allocator a chance to free internal state */
-        (*allocator)(allocator, NULL, NULL);
+        DW_USE((*allocator)(allocator, NULL, NULL));
     }
     *dwarf = NULL; /* Ensure it is `NULL` */
 }
+#pragma GCC diagnostic pop
