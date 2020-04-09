@@ -29,6 +29,9 @@ the performance thus far.
 
 ![Benchmark plot](./docs/bench.png)
 
+<details>
+<summary>Results</summary>
+
 ### libdweller (debug, initial commit)
 
 ```
@@ -90,3 +93,5 @@ real    0m0.743s
 user    0m1.478s
 sys     0m0.008s
 ```
+
+</details>
