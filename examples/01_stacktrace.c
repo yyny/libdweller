@@ -18,6 +18,8 @@
 #include <dweller/dwarf.h>
 #include <dweller/libc.h>
 
+#define CONFIG_USE_BACKTRACE
+
 static int debugdir = -1;
 static void **root_frame;
 
@@ -216,7 +218,7 @@ void backtrace_fini(void) {
     /* TODO */
 }
 
-#if CONFIG_USE_LIBGCC
+#if defined(CONFIG_USE_LIBGCC)
 #include <unwind.h>
 
 _Unwind_Reason_Code trace_cb(struct _Unwind_Context *ctx, void *unused)
@@ -224,20 +226,20 @@ _Unwind_Reason_Code trace_cb(struct _Unwind_Context *ctx, void *unused)
     return_addresses[num_return_addresses++] = _Unwind_GetIP(ctx);
     return _URC_NO_REASON;
 }
-#elif CONFIG_USE_BACKTRACE
+#elif defined(CONFIG_USE_BACKTRACE)
 #include <execinfo.h>
 #endif
 
 void backtrace_print_stacktrace(void) {
     size_t i;
-#if CONFIG_USE_LIBGCC
+#if defined(CONFIG_USE_LIBGCC)
     /*
     Use libgcc_s, which is required on all LSB linux distributions [1]
 
     [1] https://refspecs.linuxbase.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/libgcc-s.html
     */
     _Unwind_Backtrace(trace_cb, NULL);
-#elif CONFIG_USE_BACKTRACE
+#elif defined(CONFIG_USE_BACKTRACE)
     /*
     Or, use libunwind/libc backtrace:
     Note that this uses _Unwind_Backtrace internally, at least on amd64
