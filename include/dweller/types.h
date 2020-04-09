@@ -31,6 +31,8 @@ typedef int8_t dw_i8_t;
 typedef int16_t dw_i16_t;
 typedef int32_t dw_i32_t;
 typedef int64_t dw_i64_t;
+
+#define DW_MAXALIGN alignof(dw_maxalign_t)
 #else
 typedef unsigned char dw_u8_t;
 typedef unsigned short dw_u16_t;
@@ -41,6 +43,8 @@ typedef signed char  dw_i8_t;
 typedef signed short dw_i16_t;
 typedef signed int   dw_i32_t;
 typedef signed long  dw_i64_t;
+
+#define DW_MAXALIGN sizeof(void *)
 #endif
 
 #endif /* DWELLER_TYPES_H */

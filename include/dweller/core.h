@@ -46,7 +46,7 @@ typedef int (*DW_SELF)();
 /* A simple write callback with the same interface as write(2).
  */
 typedef dw_mustuse int (*dw_writer_t)(DW_SELF *self, const void *data, size_t size) dw_nonnull(1, 2);
-/* A simple reaad callback with the same interface as read(2).
+/* A simple read callback with the same interface as read(2).
  */
 typedef dw_mustuse int (*dw_reader_t)(DW_SELF *self, void *data, size_t size) dw_nonnull(1, 2);
 /* Defines the type of an allocation request.
@@ -176,6 +176,6 @@ struct dwarf_alloc_req {
  * respond to further requests with the behaviour defined above.
  * @pointer Pointer to pointer (Typed as a void pointer to avoid warnings)
  */
-typedef dw_mustuse int (*dw_alloc_t)(DW_SELF *self, struct dwarf_alloc_req *req, void *pointer) dw_nonnull(1);
+typedef dw_mustuse int (*dw_alloc_t)(DW_SELF *self, struct dwarf_alloc_req *req, void **pointer) dw_nonnull(1);
 
 #endif /* DWELLER_CORE_H */

@@ -16,6 +16,7 @@
  *
  ****************************************************************************/
 #include <dweller/dwarf.h>
+#include <dweller/util.h>
 #include "dwarf_compat.h"
 #include "dwarf_error.h"
 
@@ -79,7 +80,7 @@ static bool dwarf_parse_aranges_section(struct dwarf *dwarf, struct dwarf_sectio
             }
         } while (arange.base || arange.size);
         get32(&parser); /* FIXME: ??? */
-        aranges->aranges = realloc(aranges->aranges, (aranges->num_aranges + 1) * sizeof(struct dwarf_address_ranges));
+        aranges->aranges = dw_realloc(dwarf, aranges->aranges, (aranges->num_aranges + 1) * sizeof(struct dwarf_address_ranges));
         aranges->aranges[aranges->num_aranges++] = arangelst;
     }
     return true;
@@ -124,7 +125,7 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
         lineprg.line_base = get8(&parser);
         lineprg.line_range = get8(&parser);
         lineprg.num_basic_opcodes = get8(&parser);
-        lineprg.basic_opcode_argcount = malloc(lineprg.num_basic_opcodes * sizeof(uint8_t));
+        lineprg.basic_opcode_argcount = dw_malloc(dwarf, lineprg.num_basic_opcodes * sizeof(uint8_t));
         uint8_t i;
         for (i=0; i < lineprg.num_basic_opcodes - 1; i++) {
             lineprg.basic_opcode_argcount[i] = get8(&parser);
@@ -132,7 +133,8 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
         while (peak8(&parser)) {
             dw_str_t path = parser.cur - parser.base;
             while (get8(&parser));
-            lineprg.include_directories = realloc(lineprg.include_directories, (lineprg.num_include_directories + 1) * sizeof(dw_str_t));
+            /* TODO: Allocate as OBSTACK */
+            lineprg.include_directories = dw_realloc(dwarf, lineprg.include_directories, (lineprg.num_include_directories + 1) * sizeof(dw_str_t));
             lineprg.include_directories[lineprg.num_include_directories++] = path;
         }
         get8(&parser);
@@ -143,7 +145,8 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
             info.include_directory_idx = getvar64(&parser, NULL);
             info.last_modification_time = getvar64(&parser, NULL);
             info.file_size = getvar64(&parser, NULL);
-            lineprg.files = realloc(lineprg.files, (lineprg.num_files + 1) * sizeof(struct dwarf_fileinfo));
+            /* TODO: Allocate as OBSTACK */
+            lineprg.files = dw_realloc(dwarf, lineprg.files, (lineprg.num_files + 1) * sizeof(struct dwarf_fileinfo));
             lineprg.files[lineprg.num_files++] = info;
         }
         get8(&parser); /* Skip NUL */
@@ -175,7 +178,7 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
                 uint8_t i;
                 const char *name = dwarf_get_symbol_name(DW_LNS, basic_opcode);
                 uint64_t nargs = lineprg.basic_opcode_argcount[basic_opcode - 1]; /* Array is 1-indexed */
-                uint64_t *args = malloc(nargs * sizeof(uint64_t));
+                uint64_t *args = dw_malloc(dwarf, nargs * sizeof(uint64_t));
                 for (i=0; i < nargs; i++) {
                     args[i] = getvar64(&parser, NULL);
                 }
@@ -233,7 +236,7 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
                 uint64_t extended_opcode_length = getvar64(&parser, NULL);
                 uint8_t extended_opcode = get8(&parser);
                 const char *extended_opcode_name = dwarf_get_symbol_name(DW_LNE, extended_opcode);
-                uint8_t *args = malloc(extended_opcode_length - 1);
+                uint8_t *args = dw_malloc(dwarf, extended_opcode_length - 1);
                 for (i=0; i < extended_opcode_length - 1; i++) {
                     args[i] = get8(&parser);
                 }
@@ -322,11 +325,11 @@ static bool dwarf_parse_abbrev_section(struct dwarf *dwarf, struct dwarf_section
             }
             get8(&parser); /* Null attribute ID */
             get8(&parser); /* Null form ID */
-            table.abbreviations = realloc(table.abbreviations, (table.num_abbreviations + 1) * sizeof(dwarf_abbrev_t));
+            table.abbreviations = dw_realloc(dwarf, table.abbreviations, (table.num_abbreviations + 1) * sizeof(dwarf_abbrev_t));
             table.abbreviations[table.num_abbreviations++] = abbrev;
         }
         while (!peak8(&parser) && !done(&parser)) get8(&parser); /* Null entry to end table, also accounts for potential padding */
-        abbrev->tables = realloc(abbrev->tables, (abbrev->num_tables + 1) * sizeof(dwarf_abbrev_table_t));
+        abbrev->tables = dw_realloc(dwarf, abbrev->tables, (abbrev->num_tables + 1) * sizeof(dwarf_abbrev_table_t));
         abbrev->tables[abbrev->num_tables++] = table;
     }
     return true;
@@ -349,27 +352,26 @@ static bool dwarf_parse_compilation_unit_from_abreviation_table(struct dwarf *dw
             depth--;
             continue;
         }
-        dwarf_die_t *die = dwarf_die_new(dwarf, errinfo);
-        if (!die) return false;
-        if (!dwarf_die_init(dwarf, die, errinfo)) return false;
-        die->section = cu->unit.die.section;
-        die->section_offset = parser->cur - parser->base;
-        die->abbrev_code = getvar64(parser, NULL);
-        die->abbrev_table = abtable;
-        die->depth = depth;
-        dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, abtable, die->abbrev_code);
+        dwarf_die_t die;
+        if (!dwarf_die_init(dwarf, &die, errinfo)) return false;
+        die.section = cu->unit.die.section;
+        die.section_offset = parser->cur - parser->base;
+        die.abbrev_code = getvar64(parser, NULL);
+        die.abbrev_table = abtable;
+        die.depth = depth;
+        dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, abtable, die.abbrev_code);
         assert(abbrev); /* FIXME */
         struct Parser abparser;
         abparser.cur = dwarf->abbrev.section.base + abbrev->offset;
         abparser.size = -1;
         /* Skip over the abbreviation code */
-        check(getvar64(&abparser, NULL) == die->abbrev_code);
-        die->tag = getvar64(&abparser, NULL);
-        die->has_children = get8(&abparser);
+        check(getvar64(&abparser, NULL) == die.abbrev_code);
+        die.tag = getvar64(&abparser, NULL);
+        die.has_children = get8(&abparser);
         if (dwarf->die_cb) {
-            dwarf->die_cb(dwarf, die);
+            dwarf->die_cb(dwarf, &die);
         }
-        if (die->has_children) depth++;
+        if (die.has_children) depth++;
         while (peak16(&abparser)) {
             size_t i;
             dwarf_attr_t attr;
@@ -455,11 +457,11 @@ static bool dwarf_parse_compilation_unit_from_abreviation_table(struct dwarf *dw
                 abort();
             }
             if (dwarf->attr_cb && attr_cb_status != DW_CB_DONE) {
-                attr_cb_status = dwarf->attr_cb(dwarf, die, &attr);
+                attr_cb_status = dwarf->attr_cb(dwarf, &die, &attr);
             }
-            if (die->attr_cb) {
-                enum dw_cb_status status = die->attr_cb(dwarf, die, &attr);
-                if (status == DW_CB_DONE) die->attr_cb = NULL;
+            if (die.attr_cb) {
+                enum dw_cb_status status = die.attr_cb(dwarf, &die, &attr);
+                if (status == DW_CB_DONE) die.attr_cb = NULL;
             }
         }
         get16(&abparser); /* Skip the null entry */
@@ -479,6 +481,29 @@ static struct dwarf_abbreviation_table *dwarf_find_abbreviation_table_at_offset(
     }
     return abtable;
 }
+static bool dwarf_parse_info_section_cu(struct dwarf *dwarf, struct dwarf_section_info *info, dwarf_cu_t *cu, struct dwarf_errinfo *errinfo)
+{
+    struct Parser parser;
+    parser.base = info->section.base + cu->unit.die.section_offset;
+    parser.size = info->section.size + cu->unit.die.section_offset;
+    parser.cur = parser.base;
+    assert(cu->unit.die.length + get32(&parser));
+    cu->unit.version = get16(&parser);
+    /*
+    TODO: Actually check version
+    assert(cu->unit.version == 2 || cu->unit.version == 4);
+
+    NOTE: AFAIK, format is exactly the same, only form/value conventions are different
+    The code as-is should be enough to just skip a section no matter the DWARF version
+    */
+    cu->unit.type = DWARF_UNITTYPE_COMPILE; /* Version 4 and below only have compilation units */
+    cu->unit.debug_abbrev_offset = get32(&parser);
+    cu->unit.address_size = get8(&parser);
+    assert(cu->unit.address_size == 8); /* FIXME: Check */
+    struct dwarf_abbreviation_table *abtable = dwarf_find_abbreviation_table_at_offset(dwarf, cu->unit.debug_abbrev_offset);
+    if (!abtable) error(runtime_error("couldn't find an abbreviation table at offset %1 (for compilation unit at offset %2)", "II", cu->unit.debug_abbrev_offset, cu->unit.die.section_offset));
+    return dwarf_parse_compilation_unit_from_abreviation_table(dwarf, cu, abtable, &parser, errinfo);
+}
 static bool dwarf_parse_info_section(struct dwarf *dwarf, struct dwarf_section_info *info, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
@@ -490,29 +515,15 @@ static bool dwarf_parse_info_section(struct dwarf *dwarf, struct dwarf_section_i
     parser.size = info->section.size;
     parser.cur = parser.base;
     while (!done(&parser)) {
-        dwarf_cu_t *cu = dwarf_cu_new(dwarf, errinfo);
-        if (!cu) return false;
-        if (!dwarf_cu_init(dwarf, cu, errinfo)) return false;
-        cu->unit.die.section = DWARF_SECTION_INFO;
-        cu->unit.die.section_offset = parser.cur - parser.base;
-        cu->unit.die.parent = NULL;
-        cu->unit.die.depth = 0;
-        cu->unit.die.length = get32(&parser);
-        cu->unit.version = get16(&parser);
-        /*
-        TODO: Actually check version
-        assert(cu->unit.version == 2 || cu->unit.version == 4);
-
-        NOTE: AFAIK, format is exactly the same, only form/value conventions are different
-        The code as-is should be enough to just skip a section no matter the DWARF version
-        */
-        cu->unit.type = DWARF_UNITTYPE_COMPILE; /* Version 4 and below only have compilation units */
-        cu->unit.debug_abbrev_offset = get32(&parser);
-        cu->unit.address_size = get8(&parser);
-        assert(cu->unit.address_size == 8); /* FIXME: Check */
-        struct dwarf_abbreviation_table *abtable = dwarf_find_abbreviation_table_at_offset(dwarf, cu->unit.debug_abbrev_offset);
-        if (!abtable) error(runtime_error("couldn't find an abbreviation table at offset %1 (for compilation unit at offset %2)", "II", cu->unit.debug_abbrev_offset, cu->unit.die.section_offset));
-        dwarf_parse_compilation_unit_from_abreviation_table(dwarf, cu, abtable, &parser, errinfo);
+        dwarf_cu_t cu;
+        if (!dwarf_cu_init(dwarf, &cu, errinfo)) return false;
+        cu.unit.die.section = DWARF_SECTION_INFO;
+        cu.unit.die.section_offset = parser.cur - parser.base;
+        cu.unit.die.parent = NULL;
+        cu.unit.die.depth = 0;
+        cu.unit.die.length = get32(&parser);
+        dwarf_parse_info_section_cu(dwarf, info, &cu, errinfo);
+        parser.cur += cu.unit.die.length;
     }
     return true;
 }

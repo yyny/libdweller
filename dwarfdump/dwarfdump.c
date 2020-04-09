@@ -43,7 +43,7 @@ static void printusage()
 static char buffer[4096 * 4096];
 static size_t buffersz = 0;
 
-#define output(data, size) do { if (buffersz >= 4096 * 1024) flushoutput(data, size); } while (0)
+#define output(data, size) do { if (buffersz >= 4096 * 4096 - 4096 * 2) flushoutput(data, size); } while (0)
 #define flushoutput(data, size) do { write(STDOUT_FILENO, data, size); buffersz = 0; } while (0)
 
 #define putlit(str) \
