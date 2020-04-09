@@ -102,6 +102,163 @@ static void reset_state(struct dwarf *dwarf, struct dwarf_line_program *program,
     state->line = 1;
     state->is_stmt = program->default_is_stmt;
 }
+static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dwarf_section_line *line, struct dwarf_line_program *lineprg, struct dwarf_errinfo *errinfo)
+{
+    struct Parser parser;
+    parser.base = line->section.base + lineprg->section_offset;
+    parser.size = line->section.size - lineprg->section_offset;
+    parser.cur = parser.base;
+    dw_u32_t length = get32(&parser);
+    assert(lineprg->length == length);
+    lineprg->version = get16(&parser);
+    assert(lineprg->version == 2);
+    lineprg->header_length = get32(&parser);
+    lineprg->instruction_size = get8(&parser);
+    lineprg->default_is_stmt = get8(&parser);
+    lineprg->line_base = get8(&parser);
+    lineprg->line_range = get8(&parser);
+    lineprg->num_basic_opcodes = get8(&parser);
+    lineprg->basic_opcode_argcount = dw_malloc(dwarf, lineprg->num_basic_opcodes * sizeof(uint8_t));
+    uint8_t i;
+    for (i=0; i < lineprg->num_basic_opcodes - 1; i++) {
+        lineprg->basic_opcode_argcount[i] = get8(&parser);
+    }
+    while (peak8(&parser)) {
+        dw_str_t path = parser.cur - parser.base;
+        while (get8(&parser));
+        /* TODO: Allocate as OBSTACK */
+        lineprg->include_directories = dw_realloc(dwarf, lineprg->include_directories, (lineprg->num_include_directories + 1) * sizeof(dw_str_t));
+        lineprg->include_directories[lineprg->num_include_directories++] = path;
+    }
+    get8(&parser);
+    while (peak8(&parser)) {
+        struct dwarf_fileinfo info;
+        info.name = parser.cur - parser.base;
+        while (get8(&parser));
+        info.include_directory_idx = getvar64(&parser, NULL);
+        info.last_modification_time = getvar64(&parser, NULL);
+        info.file_size = getvar64(&parser, NULL);
+        /* TODO: Allocate as OBSTACK */
+        lineprg->files = dw_realloc(dwarf, lineprg->files, (lineprg->num_files + 1) * sizeof(struct dwarf_fileinfo));
+        lineprg->files[lineprg->num_files++] = info;
+    }
+    get8(&parser); /* Skip NUL */
+    if (dwarf->line_cb) {
+        dwarf->line_cb(dwarf, lineprg);
+    }
+    struct dwarf_line_program_state state;
+    reset_state(dwarf, lineprg, &state);
+    struct dwarf_line_program_state last_state = state;
+    last_state.file = 0;
+    last_state.line = 0;
+    last_state.column = 0;
+    while ((parser.cur - parser.base) < lineprg->length + sizeof(dw_u32_t)) {
+        int basic_opcode = get8(&parser);
+        if (basic_opcode > lineprg->num_basic_opcodes) { /* This is a special opcode, it takes no arguments */
+            int special_opcode = basic_opcode - lineprg->num_basic_opcodes;
+            int line_increment = lineprg->line_base + (special_opcode % lineprg->line_range);
+            int address_increment = (special_opcode / lineprg->line_range) * lineprg->instruction_size;
+            state.line += line_increment;
+            state.address += address_increment;
+            append_row(dwarf, lineprg, &state, &last_state);
+            state.basic_block = false;
+            state.prologue_end = false;
+            state.epilogue_begin = false;
+            state.discriminator = false;
+        } else if (basic_opcode == DW_LNS_fixed_advance_pc) { /* See docs */
+            int address_increment = get16(&parser);
+        } else if (basic_opcode) { /* This is a basic opcode */
+            uint8_t i;
+            const char *name = dwarf_get_symbol_name(DW_LNS, basic_opcode);
+            uint64_t nargs = lineprg->basic_opcode_argcount[basic_opcode - 1]; /* Array is 1-indexed */
+            uint64_t *args = dw_malloc(dwarf, nargs * sizeof(uint64_t));
+            for (i=0; i < nargs; i++) {
+                args[i] = getvar64(&parser, NULL);
+            }
+            switch (basic_opcode) {
+            /* Same as basic opcode with `line_increment` and
+             * `address_increment` as zero
+             */
+            case DW_LNS_copy:
+                append_row(dwarf, lineprg, &state, &last_state);
+                state.basic_block = false;
+                break;
+            case DW_LNS_advance_pc:
+                {
+                    assert(nargs == 1); /* TODO: Do this test when the basic_opcode_argcount gets filled */
+                    int address_increment = args[0] * lineprg->instruction_size;
+                    state.address += address_increment;
+                }
+                break;
+            case DW_LNS_advance_line:
+                state.line += var64_tosigned(args[0]);
+                break;
+            case DW_LNS_set_file:
+                state.file = args[0];
+                break;
+            case DW_LNS_set_column:
+                state.column = args[0];
+                break;
+            case DW_LNS_negate_stmt:
+                state.is_stmt = !state.is_stmt;
+                break;
+            case DW_LNS_set_basic_block:
+                state.basic_block = true;
+                break;
+            case DW_LNS_const_add_pc:
+                {
+                    int address_increment = ((255 - lineprg->num_basic_opcodes) / lineprg->line_range) * lineprg->instruction_size;
+                    state.address += address_increment;
+                }
+                break;
+            case DW_LNS_set_prologue_end:
+                state.prologue_end = true;
+                break;
+            case DW_LNS_set_epilogue_begin:
+                state.epilogue_begin = true;
+                break;
+            case DW_LNS_set_isa:
+                state.isa = args[0];
+                break;
+            case DW_LNS_fixed_advance_pc: /* This is already handled and just to shut up compiler warnings */
+            default:
+                break;
+            }
+        } else { /* This is an extended opcode */
+            uint64_t i;
+            uint64_t extended_opcode_length = getvar64(&parser, NULL);
+            uint8_t extended_opcode = get8(&parser);
+            const char *extended_opcode_name = dwarf_get_symbol_name(DW_LNE, extended_opcode);
+            assert(extended_opcode_length != 0);
+            uint8_t *args = dw_malloc(dwarf, extended_opcode_length - 1);
+            for (i=0; i < extended_opcode_length - 1; i++) {
+                args[i] = get8(&parser);
+            }
+            switch (extended_opcode) {
+            case DW_LNE_end_sequence:
+                state.end_sequence = true;
+                append_row(dwarf, lineprg, &state, &last_state);
+                reset_state(dwarf, lineprg, &state);
+                break;
+            case DW_LNE_set_address: /* FIXME: Check that args is actually an address */
+                state.address = *(uint64_t *)args;
+                break;
+            case DW_LNE_set_discriminator:
+                {
+                    struct Parser parser;
+                    parser.base = args;
+                    parser.size = extended_opcode_length - 1;
+                    parser.cur = parser.base;
+                    state.discriminator = getvar64(&parser, NULL);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    return true;
+}
 static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_line *line, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
@@ -117,152 +274,8 @@ static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_l
         memset(&lineprg, 0x00, sizeof(lineprg));
         lineprg.section_offset = parser.cur - parser.base;
         lineprg.length = get32(&parser);
-        lineprg.version = get16(&parser);
-        assert(lineprg.version == 2);
-        lineprg.header_length = get32(&parser);
-        lineprg.instruction_size = get8(&parser);
-        lineprg.default_is_stmt = get8(&parser);
-        lineprg.line_base = get8(&parser);
-        lineprg.line_range = get8(&parser);
-        lineprg.num_basic_opcodes = get8(&parser);
-        lineprg.basic_opcode_argcount = dw_malloc(dwarf, lineprg.num_basic_opcodes * sizeof(uint8_t));
-        uint8_t i;
-        for (i=0; i < lineprg.num_basic_opcodes - 1; i++) {
-            lineprg.basic_opcode_argcount[i] = get8(&parser);
-        }
-        while (peak8(&parser)) {
-            dw_str_t path = parser.cur - parser.base;
-            while (get8(&parser));
-            /* TODO: Allocate as OBSTACK */
-            lineprg.include_directories = dw_realloc(dwarf, lineprg.include_directories, (lineprg.num_include_directories + 1) * sizeof(dw_str_t));
-            lineprg.include_directories[lineprg.num_include_directories++] = path;
-        }
-        get8(&parser);
-        while (peak8(&parser)) {
-            struct dwarf_fileinfo info;
-            info.name = parser.cur - parser.base;
-            while (get8(&parser));
-            info.include_directory_idx = getvar64(&parser, NULL);
-            info.last_modification_time = getvar64(&parser, NULL);
-            info.file_size = getvar64(&parser, NULL);
-            /* TODO: Allocate as OBSTACK */
-            lineprg.files = dw_realloc(dwarf, lineprg.files, (lineprg.num_files + 1) * sizeof(struct dwarf_fileinfo));
-            lineprg.files[lineprg.num_files++] = info;
-        }
-        get8(&parser); /* Skip NUL */
-        if (dwarf->line_cb) {
-            dwarf->line_cb(dwarf, &lineprg);
-        }
-        struct dwarf_line_program_state state;
-        reset_state(dwarf, &lineprg, &state);
-        struct dwarf_line_program_state last_state = state;
-        last_state.file = 0;
-        last_state.line = 0;
-        last_state.column = 0;
-        while ((parser.cur - parser.base) < lineprg.section_offset + lineprg.length + sizeof(dw_u32_t)) {
-            int basic_opcode = get8(&parser);
-            if (basic_opcode > lineprg.num_basic_opcodes) { /* This is a special opcode, it takes no arguments */
-                int special_opcode = basic_opcode - lineprg.num_basic_opcodes;
-                int line_increment = lineprg.line_base + (special_opcode % lineprg.line_range);
-                int address_increment = (special_opcode / lineprg.line_range) * lineprg.instruction_size;
-                state.line += line_increment;
-                state.address += address_increment;
-                append_row(dwarf, &lineprg, &state, &last_state);
-                state.basic_block = false;
-                state.prologue_end = false;
-                state.epilogue_begin = false;
-                state.discriminator = false;
-            } else if (basic_opcode == DW_LNS_fixed_advance_pc) { /* See docs */
-                int address_increment = get16(&parser);
-            } else if (basic_opcode) { /* This is a basic opcode */
-                uint8_t i;
-                const char *name = dwarf_get_symbol_name(DW_LNS, basic_opcode);
-                uint64_t nargs = lineprg.basic_opcode_argcount[basic_opcode - 1]; /* Array is 1-indexed */
-                uint64_t *args = dw_malloc(dwarf, nargs * sizeof(uint64_t));
-                for (i=0; i < nargs; i++) {
-                    args[i] = getvar64(&parser, NULL);
-                }
-                switch (basic_opcode) {
-                /* Same as basic opcode with `line_increment` and
-                 * `address_increment` as zero
-                 */
-                case DW_LNS_copy:
-                    append_row(dwarf, &lineprg, &state, &last_state);
-                    state.basic_block = false;
-                    break;
-                case DW_LNS_advance_pc:
-                    {
-                        assert(nargs == 1); /* TODO: Do this test when the basic_opcode_argcount gets filled */
-                        int address_increment = args[0] * lineprg.instruction_size;
-                        state.address += address_increment;
-                    }
-                    break;
-                case DW_LNS_advance_line:
-                    state.line += var64_tosigned(args[0]);
-                    break;
-                case DW_LNS_set_file:
-                    state.file = args[0];
-                    break;
-                case DW_LNS_set_column:
-                    state.column = args[0];
-                    break;
-                case DW_LNS_negate_stmt:
-                    state.is_stmt = !state.is_stmt;
-                    break;
-                case DW_LNS_set_basic_block:
-                    state.basic_block = true;
-                    break;
-                case DW_LNS_const_add_pc:
-                    {
-                        int address_increment = ((255 - lineprg.num_basic_opcodes) / lineprg.line_range) * lineprg.instruction_size;
-                        state.address += address_increment;
-                    }
-                    break;
-                case DW_LNS_set_prologue_end:
-                    state.prologue_end = true;
-                    break;
-                case DW_LNS_set_epilogue_begin:
-                    state.epilogue_begin = true;
-                    break;
-                case DW_LNS_set_isa:
-                    state.isa = args[0];
-                    break;
-                case DW_LNS_fixed_advance_pc: /* This is already handled and just to shut up compiler warnings */
-                default:
-                    break;
-                }
-            } else { /* This is an extended opcode */
-                uint64_t i;
-                uint64_t extended_opcode_length = getvar64(&parser, NULL);
-                uint8_t extended_opcode = get8(&parser);
-                const char *extended_opcode_name = dwarf_get_symbol_name(DW_LNE, extended_opcode);
-                uint8_t *args = dw_malloc(dwarf, extended_opcode_length - 1);
-                for (i=0; i < extended_opcode_length - 1; i++) {
-                    args[i] = get8(&parser);
-                }
-                switch (extended_opcode) {
-                case DW_LNE_end_sequence:
-                    state.end_sequence = true;
-                    append_row(dwarf, &lineprg, &state, &last_state);
-                    reset_state(dwarf, &lineprg, &state);
-                    break;
-                case DW_LNE_set_address: /* FIXME: Check that args is actually an address */
-                    state.address = *(uint64_t *)args;
-                    break;
-                case DW_LNE_set_discriminator:
-                    {
-                        struct Parser parser;
-                        parser.base = args;
-                        parser.size = extended_opcode_length - 1;
-                        parser.cur = parser.base;
-                        state.discriminator = getvar64(&parser, NULL);
-                    }
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
+        if (!dwarf_parse_line_section_line_program(dwarf, line, &lineprg, errinfo)) return false;
+        parser.cur += lineprg.length;
     }
     return true;
 }
@@ -485,9 +498,10 @@ static bool dwarf_parse_info_section_cu(struct dwarf *dwarf, struct dwarf_sectio
 {
     struct Parser parser;
     parser.base = info->section.base + cu->unit.die.section_offset;
-    parser.size = info->section.size + cu->unit.die.section_offset;
+    parser.size = info->section.size - cu->unit.die.section_offset;
     parser.cur = parser.base;
-    assert(cu->unit.die.length + get32(&parser));
+    dw_u32_t length = get32(&parser);
+    assert(cu->unit.die.length == length);
     cu->unit.version = get16(&parser);
     /*
     TODO: Actually check version
