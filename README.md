@@ -46,9 +46,9 @@ sys     0m0.060s
 $ libc="/usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so"
 $ time ./build/dwarfdump/dwarfdump $libc > /dev/null
 
-real    0m0.587s
-user    0m0.554s
-sys     0m0.024s
+real    0m0.428s
+user    0m0.394s
+sys     0m0.028s
 ```
 
 ### libdwarf (stripped)

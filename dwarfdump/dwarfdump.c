@@ -40,8 +40,11 @@ static void printusage()
 /* Static buffer shared between all printers
  * ( To race against Gimli c: )
  */
-static char buffer[4096];
-size_t buffersz = 0;
+static char buffer[4096 * 4096];
+static size_t buffersz = 0;
+
+#define output(data, size) do { if (buffersz >= 4096 * 1024) flushoutput(data, size); } while (0)
+#define flushoutput(data, size) do { write(STDOUT_FILENO, data, size); buffersz = 0; } while (0)
 
 #define putlit(str) \
     do { \
@@ -152,7 +155,7 @@ static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_prog
         put('\"');
     }
     put('\n');
-    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+    output(buffer, buffersz);
     return DW_CB_OK;
 }
 static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program *program)
@@ -195,7 +198,7 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
         put('\n');
     }
     put('\n');
-    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+    output(buffer, buffersz);
 
     program->line_row_cb = line_row_cb;
     return DW_CB_OK;
@@ -288,7 +291,7 @@ static enum dw_cb_status aranges_cb(struct dwarf *dwarf, dwarf_aranges_t *arange
 
     put('\n');
     putlit("  Seg From                 To                   Length\n");
-    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+    output(buffer, buffersz);
 
     aranges->arange_cb = arange_cb;
     return DW_CB_OK;
@@ -360,7 +363,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         puthex2(attr->form, 0);
     }
     put('\n');
-    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+    output(buffer, buffersz);
     return DW_CB_OK;
 }
 static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
@@ -392,7 +395,7 @@ static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
     puthex2(abbrev->offset, 0);
     put('\n');
 
-    fwrite(buffer, sizeof(char), buffersz, stdout); buffersz = 0;
+    output(buffer, buffersz);
 
     die->attr_cb = attr_cb;
     return DW_CB_OK;
@@ -437,6 +440,7 @@ int main(int argc, const char *argv[])
     loadelf(dwarf, data, size, &errinfo);
     if (data == MAP_FAILED) goto fail;
     dwarf_parse(dwarf, &errinfo);
+    flushoutput(buffer, buffersz);
 
 fail:
     if (data == MAP_FAILED) perror(argv[1]);

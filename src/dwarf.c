@@ -268,7 +268,10 @@ dwarf_abbrev_t *dwarf_abbrev_table_find_abbrev_from_code(struct dwarf *dwarf, st
     if (abbrev_code == 0) return NULL;
     if (abbrev_code > table->num_abbreviations) return NULL;
     if (table->is_sequential) return &table->abbreviations[abbrev_code - 1];
-    else { /* TODO: bearch if sorted */
+    else {
+        /*
+        TODO: bsearch if sorted, raw index if linear
+        */
         size_t i;
         for (i=0; i < table->num_abbreviations; i++) {
             dwarf_abbrev_t *abbrev = &table->abbreviations[i];
