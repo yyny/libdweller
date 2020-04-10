@@ -1,3 +1,5 @@
+%include "common.asm"
+
 section .debug_info
 debug_info:
 .end:

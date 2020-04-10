@@ -1,1 +1,3 @@
+%include "common.asm"
+
 ; nothing here...

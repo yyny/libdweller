@@ -12,13 +12,13 @@ foreach test : tests
     elf = custom_target(''.join([test.split('.')[0], '.32.elf']),
                         input : test,
                         output : ''.join([test.split('.')[0], '.32.elf']),
-                        command : [nasm, '-f', 'elf32', '-o', '@OUTPUT@', '@INPUT@'])
+                        command : [nasm, '-i', meson.current_source_dir() + '/', '-f', 'elf32', '-o', '@OUTPUT@', '@INPUT@'])
     test(test.split('.')[0] + '.32', dwarfdump, args : [elf])
 
     elf = custom_target(''.join([test.split('.')[0], '.64.elf']),
                         input : test,
                         output : ''.join([test.split('.')[0], '.64.elf']),
-                        command : [nasm, '-f', 'elf64', '-o', '@OUTPUT@', '@INPUT@'])
+                        command : [nasm, '-i', meson.current_source_dir() + '/', '-f', 'elf64', '-o', '@OUTPUT@', '@INPUT@'])
     test(test.split('.')[0] + '.64', dwarfdump, args : [elf])
 endforeach
 
