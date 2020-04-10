@@ -40,7 +40,7 @@
 static bool dwarf_parse_aranges_section(struct dwarf *dwarf, struct dwarf_section_aranges *aranges, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
     if (dw_unlikely(!aranges->section.base)) error(argument_error(2, "aranges", __func__, "no segment data!"));
 
     struct Parser parser;
@@ -263,7 +263,7 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
 static bool dwarf_parse_line_section(struct dwarf *dwarf, struct dwarf_section_line *line, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
     if (dw_unlikely(!line->section.base)) error(argument_error(2, "line", __func__, "no segment data!"));
 
     struct Parser parser;
@@ -522,7 +522,7 @@ static bool dwarf_parse_info_section_cu(struct dwarf *dwarf, struct dwarf_sectio
 static bool dwarf_parse_info_section(struct dwarf *dwarf, struct dwarf_section_info *info, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
     if (dw_unlikely(!info->section.base)) error(argument_error(2, "info", __func__, "no segment data!"));
 
     struct Parser parser;
@@ -545,7 +545,7 @@ static bool dwarf_parse_info_section(struct dwarf *dwarf, struct dwarf_section_i
 bool dwarf_parse_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
 
     switch (ns) {
     case DWARF_SECTION_ARANGES:
@@ -570,7 +570,7 @@ bool dwarf_parse_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, s
 bool dwarf_parse(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
 
     dwarf_parse_section(dwarf, DWARF_SECTION_ARANGES, errinfo);
     dwarf_parse_section(dwarf, DWARF_SECTION_ABBREV, errinfo);
@@ -593,7 +593,7 @@ bool dwarf_walk(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
 bool dwarf_load_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_section section, struct dwarf_errinfo *errinfo)
 {
     if (has_error(errinfo)) return false;
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
 
     switch (ns) {
     case DWARF_SECTION_ARANGES:
@@ -625,12 +625,12 @@ bool dwarf_init(struct dwarf **dwarf, dw_alloc_t *allocator, struct dwarf_errinf
         sizeof(struct dwarf)
     };
     memset(errinfo, 0x00, sizeof(struct dwarf_errinfo));
-    if (dw_unlikely(!dwarf)) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
     if (dw_unlikely(!allocator)) error(argument_error(2, "allocator", __func__, "must provide an allocator"));
 
     *dwarf = NULL;
     int status = (*allocator)(allocator, &allocation_request, (void **)dwarf);
-    if (dw_unlikely(status < 0 || !dwarf)) error(allocator_error(allocator, sizeof(struct dwarf), *dwarf, "failed to allocate dwarf state"));
+    if (dw_unlikely(status < 0 || dw_isnull(dwarf))) error(allocator_error(allocator, sizeof(struct dwarf), *dwarf, "failed to allocate dwarf state"));
     memset(*dwarf, 0x00, sizeof(struct dwarf));
     (*dwarf)->allocator = allocator;
 
@@ -646,7 +646,7 @@ void dwarf_fini(struct dwarf **dwarf, const struct dwarf_errinfo *errinfo)
     };
 
     /* Don't need to return errors since we are in the finalizer */
-    if (dw_unlikely(!dwarf)) return; /* You're a weirdo */
+    if (dw_unlikely(dw_isnull(dwarf))) return; /* You're a weirdo */
     if (dw_unlikely(!*dwarf)) return; /* We already freed it */
 
     dw_alloc_t *allocator = (*dwarf)->allocator;

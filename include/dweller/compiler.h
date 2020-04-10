@@ -31,9 +31,8 @@
 #define dw_isnull(x) \
     ({ \
         _Pragma("GCC diagnostic push") \
-        _Pragma("GCC diagnostic ignored \"-Wnonnull-compare\"") \
         _Pragma("GCC diagnostic ignored \"-Waddress\"") \
-        bool res_ = (x); \
+        bool res_ = (x) == NULL; \
         _Pragma("GCC diagnostic pop") \
         res_; \
     })
