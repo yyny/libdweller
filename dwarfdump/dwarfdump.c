@@ -29,10 +29,18 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define MAX(a, b) ((a) >= (b) ? (a) : (b))
+#define MIN(a, b) ((a) <= (b) ? (a) : (b))
+#define STRLEN(str) (sizeof(str) - 1)
 #define ARRAYSIZE(arr) (sizeof(arr) / sizeof(*arr))
 
 static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo);
 
+static void error(const char *str)
+{
+    fprintf(stderr, "%s\n", str);
+    exit(1);
+}
 static void printusage()
 {
     puts("USAGE: dwarfdump <object file>");
@@ -58,11 +66,20 @@ static void flushoutput(const char *data, size_t size)
     } while (nwritten < size);
     buffersz = 0;
 }
+static bool checkquota(size_t n) {
+    return n < ARRAYSIZE(buffer) - buffersz;
+}
+static void ensurequota(size_t n) {
+    if (!checkquota(n)) {
+        flushoutput(buffer, buffersz);
+        if (!checkquota(n)) error("out of memory");
+    }
+}
 
 #define putlit(str) \
     do { \
         size_t i_; \
-        for (i_=0; i_ < sizeof(str) - 1; i_++) { \
+        for (i_=0; i_ < STRLEN(str); i_++) { \
             put(str[i_]); \
         } \
     } while (0)
@@ -142,12 +159,16 @@ static void putaddr64(uint64_t val) {
 #define putaddr(val) putaddr32(val) /* FIXME: Figure this out depending on DWARF32 or DWARF64 */
 static void puturi(const char *path) {
     /* TODO */
-    /* TODO: Also do bounds checking on buffersz */
+    /* TODO: Also do bounds checking on buffersz? */
     putcstr(path);
 }
 
 static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_program *program, struct dwarf_line_program_state *state, struct dwarf_line_program_state *last_state)
 {
+    const size_t maxn = STRLEN(
+        "0xffffffffffffffff [2147483647, 2147483647] NS BB ET PE EB IS=0xffffffffffffffff DI=0xffffffffffffffff uri: \"\"\n"
+    ) + program->files[state->file - 1].namesz;
+    ensurequota(maxn);
     putaddr(state->address);
     putlit(" [");
     putint(state->line, 4);
@@ -168,18 +189,33 @@ static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_prog
         put('\"');
     }
     put('\n');
-    output(buffer, buffersz);
     return DW_CB_OK;
 }
 static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program *program)
 {
+    const size_t maxn =
+        STRLEN(" Opcodes:\n")
+      + STRLEN("  Opcode 0xff has 255 argument(s)\n") * 255
+      + STRLEN("\n")
+      + STRLEN(" The Include Directory Table\n")
+      + program->num_include_directories * STRLEN("  2147483647\t\n")
+      + program->num_include_directories * program->total_include_path_size
+      + STRLEN("\n")
+      + STRLEN(" The File Information Table\n")
+      + STRLEN("  Entry\tDir\tTime\tSize\tName\n")
+      + program->num_files * STRLEN(
+            "  2147483647\t2147483647\t2147483647\t2147483647\t\n"
+        )
+      + program->num_files * program->total_file_path_size
+      + STRLEN("\n");
+    ensurequota(maxn);
     size_t i;
     putlit(" Opcodes:\n");
-    for (i=0; i < program->num_basic_opcodes - 1; i++) {
+    for (i=1; i < program->first_special_opcode; i++) {
         putlit("  Opcode ");
-        puthex2(i + 1, 0);
+        puthex2(i, 0);
         putlit(" has ");
-        putint(program->basic_opcode_argcount[i], 0);
+        putint(program->basic_opcode_argcount[i-1], 0);
         putlit(" argument(s)\n");
     }
     put('\n');
@@ -211,13 +247,19 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
         put('\n');
     }
     put('\n');
-    output(buffer, buffersz);
 
     program->line_row_cb = line_row_cb;
     return DW_CB_OK;
 }
 static enum dw_cb_status abbrev_cb(struct dwarf *dwarf, dwarf_abbrev_t *abbrev)
 {
+    const size_t maxn = STRLEN(
+        "Defining abbreviation code 0xffffffffffffffff as tag  [has children]\n"
+    ) + MAX(STRLEN("<0xffffffffffffffff>"), DWARF_MAX_SYMBOL_NAME);
+    if (!checkquota(maxn)) {
+        flushoutput(buffer, buffersz);
+        /* No need to check again (maxn is constant) */
+    }
     const char *tag_name = dwarf_get_symbol_name(DW_TAG, abbrev->tag);
     putlit("Defining abbreviation code ");
     puthex2(abbrev->abbrev_code, 0);
@@ -240,6 +282,13 @@ static enum dw_cb_status abbrev_cb(struct dwarf *dwarf, dwarf_abbrev_t *abbrev)
 }
 static enum dw_cb_status abbrev_attr_cb(struct dwarf *dwarf, dwarf_abbrev_t *abbrev, dwarf_abbrev_attr_t *attr)
 {
+    const size_t maxn = STRLEN(
+        "  : \n"
+    ) + MAX(STRLEN("<0xffffffffffffffff>"), DWARF_MAX_SYMBOL_NAME) * 2;
+    if (!checkquota(maxn)) {
+        flushoutput(buffer, buffersz);
+        /* No need to check again (maxn is constant) */
+    }
     const char *attr_name = dwarf_get_symbol_name(DW_AT, attr->name);
     const char *form_name = dwarf_get_symbol_name(DW_FORM, attr->form);
     putlit("  ");
@@ -265,6 +314,11 @@ static enum dw_cb_status abbrev_attr_cb(struct dwarf *dwarf, dwarf_abbrev_t *abb
 
 static enum dw_cb_status arange_cb(struct dwarf *dwarf, dwarf_aranges_t *aranges, dwarf_arange_t *arange)
 {
+    const size_t maxn = STRLEN("  [2147483647] 0xffffffffffffffff - 0xffffffffffffffff | 0xffffffffffffffff (2147483647 bytes)\n");
+    if (!checkquota(maxn)) {
+        flushoutput(buffer, buffersz);
+        /* No need to check again (maxn is constant) */
+    }
     putlit("  [");
     putint(arange->segment, 0);
     putlit("] ");
@@ -282,6 +336,19 @@ static enum dw_cb_status arange_cb(struct dwarf *dwarf, dwarf_aranges_t *aranges
 }
 static enum dw_cb_status aranges_cb(struct dwarf *dwarf, dwarf_aranges_t *aranges)
 {
+    const size_t maxn = STRLEN(
+        "  Length:                   2147483647\n"
+        "  Version:                  2147483647\n"
+        "  Offset:                   0xffffffffffffffff\n"
+        "  Pointer Size:             0xffffffffffffffff\n"
+        "  Segment Size:             0xffffffffffffffff\n"
+        "\n"
+        "  Seg From                 To                   Length\n"
+    );
+    if (!checkquota(maxn)) {
+        flushoutput(buffer, buffersz);
+        /* No need to check again (maxn is constant) */
+    }
     putlit("  Length:                   ");
     putint(aranges->length, 0);
     put('\n');
@@ -304,13 +371,22 @@ static enum dw_cb_status aranges_cb(struct dwarf *dwarf, dwarf_aranges_t *arange
 
     put('\n');
     putlit("  Seg From                 To                   Length\n");
-    output(buffer, buffersz);
 
     aranges->arange_cb = arange_cb;
+
     return DW_CB_OK;
 }
 static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_attr_t *attr)
 {
+    const size_t maxn
+     = die->depth * 2
+     + STRLEN(" [] = ")
+     + MAX(STRLEN("0xffffffffffffffff"), DWARF_MAX_SYMBOL_NAME)
+     + STRLEN("0xffffffffffffffff") /* Assume worst case */
+     + STRLEN(" # FORM: ")
+     + MAX(STRLEN("0xffffffffffffffff"), DWARF_MAX_SYMBOL_NAME)
+     + STRLEN("\n");
+    ensurequota(maxn); /* NOTE: See comment in die_cb */
     const char *attr_name = dwarf_get_symbol_name(DW_AT, attr->name);
     const char *form_name = dwarf_get_symbol_name(DW_FORM, attr->form);
     putindent(die->depth * 2);
@@ -349,6 +425,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         puthex2(attr->value.off, 0);
         break;
     case DW_FORM_string:
+        ensurequota(strlen(attr->value.cstr) + STRLEN("''"));
         put('\'');
         putcstr(attr->value.cstr);
         put('\'');
@@ -356,6 +433,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
     case DW_FORM_strp:
         {
             const char *str = (const char *)dwarf->str.section.base + attr->value.stroff;
+            ensurequota(strlen(str) + STRLEN("'' (offset 0xffffffffffffffff)"));
             put('\'');
             putcstr(str);
             putlit("\' (offset ");
@@ -376,11 +454,21 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         puthex2(attr->form, 0);
     }
     put('\n');
-    output(buffer, buffersz);
     return DW_CB_OK;
 }
 static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
 {
+    const size_t maxn = STRLEN(
+        "<0xffffffffffffffff>  [has children]\n"
+        "  .abbrev_code:   0xffffffffffffffff\n"
+        "  .abbrev_offset: 0xffffffffffffffff\n"
+    ) + DWARF_MAX_SYMBOL_NAME
+      + die->depth * 6 + 4;
+    ensurequota(maxn);
+    /*
+    FIXME: die->depth would have to be unreasonably high for a out of memory situation
+    Maybe check die->depth somewhere else in the code to ensure it doesn't get too big
+    */
     dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, die->abbrev_table, die->abbrev_code);
     const char *tag_name = dwarf_get_symbol_name(DW_TAG, die->tag);
     putindent(die->depth * 2);
@@ -398,17 +486,15 @@ static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
     }
     put('\n');
 
-    putindent(die->depth * 2 + 2);
-    putlit(".abbrev_code: ");
+    putindent(die->depth * 2);
+    putlit("  .abbrev_code:   ");
     puthex2(die->abbrev_code, 0);
     put('\n');
 
-    putindent(die->depth * 2 + 2);
-    putlit(".abbrev_offset: ");
+    putindent(die->depth * 2);
+    putlit("  .abbrev_offset: ");
     puthex2(abbrev->offset, 0);
     put('\n');
-
-    output(buffer, buffersz);
 
     die->attr_cb = attr_cb;
     return DW_CB_OK;

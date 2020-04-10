@@ -119,15 +119,17 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
     lineprg->default_is_stmt = get8(&parser);
     lineprg->line_base = get8(&parser);
     lineprg->line_range = get8(&parser);
-    lineprg->num_basic_opcodes = get8(&parser);
-    lineprg->basic_opcode_argcount = dw_malloc(dwarf, lineprg->num_basic_opcodes * sizeof(uint8_t));
+    lineprg->first_special_opcode = get8(&parser);
+    uint8_t num_basic_opcodes = lineprg->first_special_opcode - 1;
+    lineprg->basic_opcode_argcount = dw_malloc(dwarf, num_basic_opcodes * sizeof(uint8_t));
     uint8_t i;
-    for (i=0; i < lineprg->num_basic_opcodes - 1; i++) {
+    for (i=0; i < num_basic_opcodes; i++) {
         lineprg->basic_opcode_argcount[i] = get8(&parser);
     }
     while (peak8(&parser)) {
         dw_str_t path = parser.cur - parser.base;
         while (get8(&parser));
+        lineprg->total_include_path_size += (parser.cur - parser.base) - path - 1;
         /* TODO: Allocate as OBSTACK */
         lineprg->include_directories = dw_realloc(dwarf, lineprg->include_directories, (lineprg->num_include_directories + 1) * sizeof(dw_str_t));
         lineprg->include_directories[lineprg->num_include_directories++] = path;
@@ -137,6 +139,8 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
         struct dwarf_fileinfo info;
         info.name = parser.cur - parser.base;
         while (get8(&parser));
+        info.namesz = (parser.cur - parser.base) - info.name - 1;
+        lineprg->total_file_path_size += info.namesz;
         info.include_directory_idx = getvar64(&parser, NULL);
         info.last_modification_time = getvar64(&parser, NULL);
         info.file_size = getvar64(&parser, NULL);
@@ -156,8 +160,8 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
     last_state.column = 0;
     while ((parser.cur - parser.base) < lineprg->length + sizeof(dw_u32_t)) {
         int basic_opcode = get8(&parser);
-        if (basic_opcode > lineprg->num_basic_opcodes) { /* This is a special opcode, it takes no arguments */
-            int special_opcode = basic_opcode - lineprg->num_basic_opcodes;
+        if (basic_opcode >= lineprg->first_special_opcode) { /* This is a special opcode, it takes no arguments */
+            int special_opcode = basic_opcode - lineprg->first_special_opcode;
             int line_increment = lineprg->line_base + (special_opcode % lineprg->line_range);
             int address_increment = (special_opcode / lineprg->line_range) * lineprg->instruction_size;
             state.line += line_increment;
@@ -187,7 +191,7 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
                 break;
             case DW_LNS_advance_pc:
                 {
-                    assert(nargs == 1); /* TODO: Do this test when the basic_opcode_argcount gets filled */
+                    assert(nargs == 1); /* TODO: Do this test when the basic_opcode_argcount gets filled? */
                     int address_increment = args[0] * lineprg->instruction_size;
                     state.address += address_increment;
                 }
@@ -209,7 +213,7 @@ static bool dwarf_parse_line_section_line_program(struct dwarf *dwarf, struct dw
                 break;
             case DW_LNS_const_add_pc:
                 {
-                    int address_increment = ((255 - lineprg->num_basic_opcodes) / lineprg->line_range) * lineprg->instruction_size;
+                    int address_increment = ((255 - lineprg->first_special_opcode) / lineprg->line_range) * lineprg->instruction_size;
                     state.address += address_increment;
                 }
                 break;
@@ -514,7 +518,7 @@ static bool dwarf_parse_info_section_cu(struct dwarf *dwarf, struct dwarf_sectio
     cu->unit.type = DWARF_UNITTYPE_COMPILE; /* Version 4 and below only have compilation units */
     cu->unit.debug_abbrev_offset = get32(&parser);
     cu->unit.address_size = get8(&parser);
-    assert(cu->unit.address_size == 8); /* FIXME: Check */
+    assert(cu->unit.address_size == 4 || cu->unit.address_size == 8); /* FIXME: Check if we are 32 or 64 bit */
     struct dwarf_abbreviation_table *abtable = dwarf_find_abbreviation_table_at_offset(dwarf, cu->unit.debug_abbrev_offset);
     if (!abtable) error(runtime_error("couldn't find an abbreviation table at offset %1 (for compilation unit at offset %2)", "II", cu->unit.debug_abbrev_offset, cu->unit.die.section_offset));
     return dwarf_parse_compilation_unit_from_abreviation_table(dwarf, cu, abtable, &parser, errinfo);

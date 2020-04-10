@@ -184,6 +184,7 @@ struct dwarf_section_str {
 
 struct dwarf_fileinfo {
     dw_str_t  name;
+    size_t    namesz;
     size_t    include_directory_idx;
     dw_u64_t  last_modification_time;
     dw_u64_t  file_size;
@@ -253,11 +254,14 @@ struct dwarf_line_program {
     dw_u8_t                default_is_stmt;
     dw_i8_t                line_base;
     dw_u8_t                line_range;
-    dw_u8_t                num_basic_opcodes;
+    dw_u8_t                first_special_opcode;
+    /* dw_u8_t num_basic_opcodes = first_special_opcode - 1; */
     dw_u8_t               *basic_opcode_argcount;
     size_t                 num_include_directories;
+    size_t                 total_include_path_size;
     dw_str_t              *include_directories;
     size_t                 num_files;
+    size_t                 total_file_path_size;
     struct dwarf_fileinfo *files;
     dw_off_t               program_offset;
     dw_line_row_cb_t       line_row_cb;
@@ -312,6 +316,9 @@ struct dwarf {
 DWAPI dwarf_abbrev_t *dwarf_abbrev_table_find_abbrev_from_code(struct dwarf *dwarf, struct dwarf_abbreviation_table *table, dw_symval_t abbrev_code);
 
 DWAPI bool dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer);
+
+/* See ./tools/calc_max_symbol_size.c */
+#define DWARF_MAX_SYMBOL_NAME 31
 
 DWAPI dw_mustuse const char *dwarf_get_symbol_name(enum dwarf_symbol_namespace ns, dw_symval_t value);
 DWAPI dw_mustuse const char *dwarf_get_symbol_shortname(enum dwarf_symbol_namespace ns, dw_symval_t value);
