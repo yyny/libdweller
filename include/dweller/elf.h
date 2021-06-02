@@ -460,4 +460,5 @@ typedef struct {
     Elf64_Word  n_descsz; /* Content size */
     Elf64_Word  n_type;   /* Content type */
 } Elf64_Nhdr;
+
 #endif /* DWELLER_ELF_H */

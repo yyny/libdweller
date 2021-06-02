@@ -21,10 +21,8 @@
 #include <stddef.h>
 
 #include <dweller/core.h>
-#include <dweller/compiler.h>
 #include <dweller/error.h>
 #include <dweller/symbols.h>
-#include <dweller/types.h>
 
 /* An offset into a segment or file */
 typedef dw_u64_t dw_off_t;
@@ -78,8 +76,6 @@ typedef enum dw_cb_status (*dw_cu_cb_t)(struct dwarf *dwarf, dwarf_cu_t *cu) dw_
 /* Callback that gets called when a `DW_UT_type_unit` has been parsed.
  */
 typedef enum dw_cb_status (*dw_tu_cb_t)(struct dwarf *dwarf, dwarf_tu_t *ud) dw_nonnull(1, 2);
-
-#define DWAPI extern
 
 #define DW_NUM_DEFAULT_OPCODES 12
 
@@ -313,43 +309,42 @@ struct dwarf {
     dw_line_row_cb_t line_row_cb;
 };
 
-DWAPI dwarf_abbrev_t *dwarf_abbrev_table_find_abbrev_from_code(struct dwarf *dwarf, struct dwarf_abbreviation_table *table, dw_symval_t abbrev_code);
+DWAPI(dwarf_abbrev_t *) dwarf_abbrev_table_find_abbrev_from_code(struct dwarf *dwarf, struct dwarf_abbreviation_table *table, dw_symval_t abbrev_code);
 
-DWAPI bool dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer);
+DWAPI(bool) dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer);
 
 /* See ./tools/calc_max_symbol_size.c */
 #define DWARF_MAX_SYMBOL_NAME 31
 
-DWAPI dw_mustuse const char *dwarf_get_symbol_name(enum dwarf_symbol_namespace ns, dw_symval_t value);
-DWAPI dw_mustuse const char *dwarf_get_symbol_shortname(enum dwarf_symbol_namespace ns, dw_symval_t value);
+DWAPI(dw_mustuse const char *) dwarf_get_symbol_name(enum dwarf_symbol_namespace ns, dw_symval_t value);
+DWAPI(dw_mustuse const char *) dwarf_get_symbol_shortname(enum dwarf_symbol_namespace ns, dw_symval_t value);
 
-DWAPI bool dwarf_init(struct dwarf **dwarf, dw_alloc_t *allocator, struct dwarf_errinfo *errinfo) dw_nonnull(1);
-DWAPI void dwarf_fini(struct dwarf **dwarf, const struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_init(struct dwarf **dwarf, dw_alloc_t *allocator, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(void) dwarf_fini(struct dwarf **dwarf, const struct dwarf_errinfo *errinfo) dw_nonnull(1);
 
-/* Load an section of DWARF data already read into memory.
+/* Load a section of DWARF data already read into memory.
  * This decreases the number of allocations that `libdweller` has to do.
  * The section data must remain valid while it is loaded, of course...
  * (don't `munmap` or `free` it!)
  */
-DWAPI bool dwarf_load_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_section section, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_load_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_section section, struct dwarf_errinfo *errinfo) dw_nonnull(1);
 
 /* Parse a section.
  * Once a relevant piece of information like a DIE or CU has been detected,
  * invokes corresponding callbacks.
- * An already parsed section will simply execute `dwarf_walk_section`, but
- * calling that function directly is ever so slightly faster, so you should
- * preferably call this function once and then call `dwarf_walk_section`.
+ * An already parsed section will simply execute `dwarf_walk_section`.
  */
-DWAPI bool dwarf_parse_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_parse_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo) dw_nonnull(1);
 /* Parse _all_ sections */
-DWAPI bool dwarf_parse(struct dwarf *dwarf, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_parse(struct dwarf *dwarf, struct dwarf_errinfo *errinfo) dw_nonnull(1);
 
 /* 'Walk' a section. That is, parse it without memoizing anything.
- * This is faster and consumes less memory, but is very inefficient when
+ * This is much faster and consumes less memory, but is very inefficient when
  * walking large sections of debug data more than once.
  * Callbacks might also not receive their arguments fully filled in.
  */
-DWAPI bool dwarf_walk_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_walk_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo) dw_nonnull(1);
 /* Walk _all_ sections */
-DWAPI bool dwarf_walk(struct dwarf *dwarf, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+DWAPI(bool) dwarf_walk(struct dwarf *dwarf, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+
 #endif /* DWELLER_DWARF_H */

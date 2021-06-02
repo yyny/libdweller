@@ -17,6 +17,7 @@
  ****************************************************************************/
 #ifndef DWELLER_CORE_H
 #define DWELLER_CORE_H
+#include <dweller/common.h>
 #include <dweller/compiler.h>
 #include <dweller/types.h>
 
@@ -29,7 +30,8 @@
  * This doesn't mean that it's guaranteed to work, but it's a very good sign.
  * POSIX also defines this behaviour.
  *
- * However, Paragraph 6.3.2.3 "Pointers" states:
+ * However, we can do better.
+ * Paragraph 6.3.2.3 "Pointers" states:
  * > A pointer to a function of one type may be converted to a pointer to a
  * > function of another type and back again; the result shall compare equal to
  * > the original pointer.  If a converted pointer is used to call a function

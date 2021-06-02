@@ -19,7 +19,8 @@
 #define DWELLER_UTIL_H
 #include <dweller/dwarf.h>
 
-static dw_unused void *dw_malloc(struct dwarf *dwarf, size_t capacity)
+DWSTATIC(void *) dw_unused
+dw_malloc(struct dwarf *dwarf, size_t capacity)
 {
     void *ptr = NULL;
     struct dwarf_alloc_req req = {
@@ -34,7 +35,8 @@ static dw_unused void *dw_malloc(struct dwarf *dwarf, size_t capacity)
 
     return ptr;
 }
-static dw_unused void *dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacity)
+DWSTATIC(void *) dw_unused
+dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacity)
 {
     struct dwarf_alloc_req req = {
         capacity,
@@ -48,7 +50,8 @@ static dw_unused void *dw_realloc(struct dwarf *dwarf, void *ptr, size_t capacit
 
     return ptr;
 }
-static dw_unused void dw_free(struct dwarf *dwarf, void *ptr)
+DWSTATIC(void) dw_unused
+dw_free(struct dwarf *dwarf, void *ptr)
 {
     static struct dwarf_alloc_req req = {
         0,

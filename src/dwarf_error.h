@@ -24,57 +24,59 @@
 #define check(expr) assert(expr)
 #endif
 #define has_error(ERROR) dwarf_has_error(ERROR)
-#define error(ERROR) do { if (errinfo) *errinfo = ERROR; return 0; } while (0)
+#define error(ERROR) do { if (errinfo) { *errinfo = ERROR; } return 0; } while (0)
 
-static struct dwarf_errarg errval_ptr(void *val) {
+DWSTATIC(struct dwarf_errarg) errval_ptr(void *val) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TPTR;
     res.err_val.f = val;
     return res;
 }
-static struct dwarf_errarg errval_fun(int (*val)()) {
+DWSTATIC(struct dwarf_errarg) errval_fun(int (*val)()) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TFUN;
     res.err_val.f = val;
     return res;
 }
-static struct dwarf_errarg errval_int(int val) {
+DWSTATIC(struct dwarf_errarg) errval_int(int val) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TINT;
     res.err_val.i = val;
     return res;
 }
-static struct dwarf_errarg errval_big(dw_u64_t val) {
+DWSTATIC(struct dwarf_errarg) errval_big(dw_u64_t val) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TBIG;
     res.err_val.u = val;
     return res;
 }
-static struct dwarf_errarg errval_str(const char *val) {
+DWSTATIC(struct dwarf_errarg) errval_str(const char *val) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TSTR;
     res.err_val.s = val;
     return res;
 }
-static struct dwarf_errarg errval_fmt(const char *val) {
+DWSTATIC(struct dwarf_errarg) errval_fmt(const char *val) {
     struct dwarf_errarg res;
     res.err_type = DW_ERRARG_TFMT;
     res.err_val.s = val;
     return res;
 }
 
-static bool errval_is_truthy(const struct dwarf_errarg *val) {
+DWSTATIC(bool) errval_is_truthy(const struct dwarf_errarg *val) {
     return val->err_val.u;
 }
 
 /* Format:
  *   I - Integer
- *   U - Big (64bit) Integer
+ *   Q - Big (64bit) Integer
  *   P - Pointer
  *   F - Function Pointer
  *   S - String
  */
-static struct dwarf_errinfo runtime_error(const char *reason, const char *fmt, ...) {
+DWSTATIC(struct dwarf_errinfo)
+runtime_error(const char *reason, const char *fmt, ...)
+{
     struct dwarf_errinfo info;
     info.err_code = DW_ERRRUN;
     info.err_arg[0] = errval_fmt(reason);
@@ -88,7 +90,7 @@ static struct dwarf_errinfo runtime_error(const char *reason, const char *fmt, .
             case 'I':
                 info.err_arg[i] = errval_int(va_arg(args, int));
                 break;
-            case 'U':
+            case 'Q':
                 info.err_arg[i] = errval_big(va_arg(args, dw_u64_t));
                 break;
             case 'P':
@@ -108,7 +110,10 @@ static struct dwarf_errinfo runtime_error(const char *reason, const char *fmt, .
     }
     return info;
 }
-static struct dwarf_errinfo argument_error(int argn, const char *argname, const char *funname, const char *reason) {
+DWSTATIC(struct dwarf_errinfo)
+argument_error(int argn, const char *argname, const char *funname,
+        const char *reason)
+{
     struct dwarf_errinfo info;
     info.err_code = DW_ERRARG;
     info.err_arg[0] = errval_int(argn);
@@ -117,7 +122,9 @@ static struct dwarf_errinfo argument_error(int argn, const char *argname, const 
     info.err_arg[3] = errval_str(reason);
     return info;
 }
-static struct dwarf_errinfo allocator_error(dw_alloc_t *alloc, int nbytes, void *ptr, const char *what) {
+DWSTATIC(struct dwarf_errinfo)
+allocator_error(dw_alloc_t *alloc, int nbytes, void *ptr, const char *what)
+{
     struct dwarf_errinfo info;
     info.err_arg[0] = errval_fun(*alloc);
     info.err_arg[1] = errval_int(nbytes);
@@ -132,7 +139,8 @@ static struct dwarf_errinfo allocator_error(dw_alloc_t *alloc, int nbytes, void 
     }
     return info;
 }
-static struct dwarf_errinfo no_allocator_error(const char *what) {
+DWSTATIC(struct dwarf_errinfo)
+no_allocator_error(const char *what) {
     struct dwarf_errinfo info;
     info.err_code = DW_ERRALLOC_NOALLOC;
     info.err_arg[0] = errval_str(what);

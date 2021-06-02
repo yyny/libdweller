@@ -15,13 +15,11 @@
  * limitations under the License.
  *
  ****************************************************************************/
-#ifndef alignof
-#  define alignof(T) DW_MAXALIGN
-#endif
+#ifndef DWELLER_COMMON_H
+#define DWELLER_COMMON_H
 
-#ifndef inline
-#  define inline
-#endif
+#define DWAPI(T) extern T
+#define DWFUN(T) inline T
+#define DWSTATIC(T) static T
 
-#define cast(T, e) ((T)(e))
-
+#endif /* DWELLER_COMMON_H */

@@ -22,8 +22,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static int dweller_libc_allocator_cb(dw_alloc_t *alloc,
-        struct dwarf_alloc_req *req, void **pointer)
+DWSTATIC(int) dw_unused
+dweller_libc_allocator_cb(dw_alloc_t *alloc, struct dwarf_alloc_req *req,
+        void **pointer)
 {
     if (!pointer) return -1;
     if (req->req_bytesize == 0) {
@@ -35,29 +36,36 @@ static int dweller_libc_allocator_cb(dw_alloc_t *alloc,
     *pointer = newptr;
     return 0;
 }
-static dw_unused dw_alloc_t dweller_libc_allocator = &dweller_libc_allocator_cb;
+DWSTATIC(dw_alloc_t) dw_unused
+dweller_libc_allocator = &dweller_libc_allocator_cb;
 
-static int dweller_libc_stdin_reader_cb(dw_writer_t *writer,
-        void *data, size_t size)
+DWSTATIC(int) dw_unused
+dweller_libc_stdin_reader_cb(dw_writer_t *writer, void *data, size_t size)
 {
     fread(data, sizeof(char), size, stdin);
     return 0;
 }
-static dw_unused dw_reader_t dweller_libc_stdin_reader = &dweller_libc_stdin_reader_cb;
+DWSTATIC(dw_reader_t) dw_unused
+dweller_libc_stdin_reader = &dweller_libc_stdin_reader_cb;
 
-static int dweller_libc_stdout_writer_cb(dw_writer_t *writer,
-        const void *data, size_t size)
+DWSTATIC(int)
+dweller_libc_stdout_writer_cb(dw_writer_t *writer, const void *data,
+        size_t size)
 {
     fwrite(data, sizeof(char), size, stdout);
     return 0;
 }
-static dw_unused dw_writer_t dweller_libc_stdout_writer = &dweller_libc_stdout_writer_cb;
+DWSTATIC(dw_writer_t) dw_unused
+dweller_libc_stdout_writer = &dweller_libc_stdout_writer_cb;
 
-static int dweller_libc_stderr_writer_cb(dw_writer_t *writer,
-        const void *data, size_t size)
+DWSTATIC(int)
+dweller_libc_stderr_writer_cb(dw_writer_t *writer, const void *data,
+        size_t size)
 {
     fwrite(data, sizeof(char), size, stderr);
     return 0;
 }
-static dw_unused dw_writer_t dweller_libc_stderr_writer = &dweller_libc_stderr_writer_cb;
+DWSTATIC(dw_writer_t) dw_unused
+dweller_libc_stderr_writer = &dweller_libc_stderr_writer_cb;
+
 #endif /* DWELLER_LIBC_H */

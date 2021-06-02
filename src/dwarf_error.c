@@ -16,8 +16,13 @@
  *
  ****************************************************************************/
 
-static bool dwarf_write_error_format(const struct dwarf_errinfo *info, const char **fmt, dw_writer_t *writer, int skip, int depth);
-static bool dwarf_write_error_arg(const struct dwarf_errinfo *info, const struct dwarf_errarg *arg, dw_writer_t *writer, int skip, int depth)
+DWSTATIC(bool)
+dwarf_write_error_format(const struct dwarf_errinfo *info, const char **fmt,
+        dw_writer_t *writer, int skip, int depth);
+DWSTATIC(bool)
+dwarf_write_error_arg(const struct dwarf_errinfo *info,
+        const struct dwarf_errarg *arg, dw_writer_t *writer, int skip,
+        int depth)
 {
     char buffer[32];
     int idx = DW_ARRAYSIZE(buffer); /* Write back to front */
@@ -65,13 +70,16 @@ static bool dwarf_write_error_arg(const struct dwarf_errinfo *info, const struct
 
     return (*writer)(writer, buffer + idx, DW_ARRAYSIZE(buffer) - 1 - idx) >= 0;
 }
-static const char *dwarf_error_format_strings[] = {
+DWSTATIC(const char *)
+dwarf_error_format_strings[] = {
     "success\n",
 #define DWARF_ERROR(NAME, FMT) FMT "\n",
     DWARF_ERRORS(DWARF_ERROR)
 #undef DWARF_ERROR
 };
-static bool dwarf_write_error_format(const struct dwarf_errinfo *info, const char **fmt, dw_writer_t *writer, int skip, int depth)
+DWSTATIC(bool)
+dwarf_write_error_format(const struct dwarf_errinfo *info, const char **fmt,
+        dw_writer_t *writer, int skip, int depth)
 {
     const char *base = *fmt;
     size_t len = 0;
@@ -138,7 +146,8 @@ static bool dwarf_write_error_format(const struct dwarf_errinfo *info, const cha
     if (skip == -1) return true;
     return (*writer)(writer, base, len) >= 0;
 }
-bool dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer)
+DWFUN(bool)
+dwarf_write_error(const struct dwarf_errinfo *info, dw_writer_t *writer)
 {
     char buffer[] = "Unknown error: 0x%%";
     size_t offset = 0;

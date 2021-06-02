@@ -17,6 +17,7 @@
  ****************************************************************************/
 #ifndef DWELLER_MACROS_H
 #define DWELLER_MACROS_H
+
 #define DW_MAX(a, b) ((a) >= (b) ? (a) : (b))
 #define DW_MIN(a, b) ((a) <= (b) ? (a) : (b))
 #define DW_STRLEN(str) (sizeof(str) - 1)
@@ -25,4 +26,5 @@
 #define DW_CONCAT2(A, B) DW_CONCAT2_INDIR(A, B)
 #define DW_CONCAT3_INDIR(A, B, C) A##B##C
 #define DW_CONCAT3(A, B, C) DW_CONCAT3_INDIR(A, B, C)
+
 #endif /* DWELLER_MACROS_H */

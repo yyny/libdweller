@@ -16,13 +16,14 @@
  *
  ****************************************************************************/
 
-static bool dwarf_die_init(struct dwarf *dwarf, dwarf_die_t *die, struct dwarf_errinfo *errinfo)
+DWSTATIC(bool) dwarf_die_init(struct dwarf *dwarf, dwarf_die_t *die, struct dwarf_errinfo *errinfo)
 {
     memset(die, 0x00, sizeof(dwarf_die_t));
     return true;
 }
-static dwarf_die_t *dwarf_die_new(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
+DWSTATIC(dwarf_die_t *) dwarf_die_new(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
 {
+    static dwarf_die_t def_die;
     struct dwarf_alloc_req allocation_request = {
         sizeof(dwarf_die_t),
         DWARF_ALLOC_STATIC,
@@ -38,5 +39,6 @@ static dwarf_die_t *dwarf_die_new(struct dwarf *dwarf, struct dwarf_errinfo *err
     if (dw_unlikely(status < 0 || !dwarf)) {
         error(allocator_error(allocator, sizeof(dwarf_die_t), die, "failed to allocate compilation unit"));
     }
+    *die = def_die;
     return die;
 }

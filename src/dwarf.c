@@ -34,6 +34,7 @@
 #include "dwarf_symbols.c"
 #include "dwarf_parser.c"
 #include "dwarf_die.c"
+#include "dwarf_unit.c"
 #include "dwarf_cu.c"
 #include "dwarf_error.c"
 
@@ -567,6 +568,7 @@ bool dwarf_parse_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, s
     case DWARF_SECTION_STR:
         /* FIXME: Nothing to parse? */
         break;
+    /* TODO: More sections... */
     }
 
     return true;
@@ -576,11 +578,11 @@ bool dwarf_parse(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
     if (has_error(errinfo)) return false;
     if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
 
-    dwarf_parse_section(dwarf, DWARF_SECTION_ARANGES, errinfo);
-    dwarf_parse_section(dwarf, DWARF_SECTION_ABBREV, errinfo);
-    dwarf_parse_section(dwarf, DWARF_SECTION_LINE, errinfo);
-    dwarf_parse_section(dwarf, DWARF_SECTION_INFO, errinfo);
-    dwarf_parse_section(dwarf, DWARF_SECTION_STR, errinfo);
+    if (!dwarf_parse_section(dwarf, DWARF_SECTION_ARANGES, errinfo)) return false;
+    if (!dwarf_parse_section(dwarf, DWARF_SECTION_ABBREV, errinfo)) return false;
+    if (!dwarf_parse_section(dwarf, DWARF_SECTION_LINE, errinfo)) return false;
+    if (!dwarf_parse_section(dwarf, DWARF_SECTION_INFO, errinfo)) return false;
+    if (!dwarf_parse_section(dwarf, DWARF_SECTION_STR, errinfo)) return false;
 
     return true;
 }

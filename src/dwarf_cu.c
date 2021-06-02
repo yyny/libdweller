@@ -16,16 +16,14 @@
  *
  ****************************************************************************/
 
-static bool dwarf_cu_init(struct dwarf *dwarf, dwarf_cu_t *cu, struct dwarf_errinfo *errinfo)
+DWSTATIC(bool) dwarf_cu_init(struct dwarf *dwarf, dwarf_cu_t *cu, struct dwarf_errinfo *errinfo)
 {
-    if (!dwarf_die_init(dwarf, &cu->unit.die, errinfo)) return false;
-    cu->unit.type = DWARF_UNITTYPE_UNKNOWN;
-    cu->unit.debug_abbrev_offset = 0;
-    cu->unit.address_size = 0;
-    cu->unit.version = 0;
+    static dwarf_cu_t def_cu;
+    *cu = def_cu;
+    if (!dwarf_unit_init(dwarf, &cu->unit, errinfo)) return false;
     return true;
 }
-static dwarf_cu_t *dwarf_cu_new(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
+DWSTATIC(dwarf_cu_t *) dwarf_cu_new(struct dwarf *dwarf, struct dwarf_errinfo *errinfo)
 {
     struct dwarf_alloc_req allocation_request = {
         sizeof(dwarf_cu_t),
