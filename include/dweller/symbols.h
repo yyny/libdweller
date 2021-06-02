@@ -53,6 +53,7 @@ enum dwarf_symbol_namespace {
     DW_END,
     /* Introduced in DWARF5 */
     DW_UT,
+    DW_LNCT,
 
     /* GNU Exception Handling */
     DW_EH  = 0x80,
@@ -544,6 +545,12 @@ enum dwarf_symbol_namespace {
     SYMBOL(skeleton,       0x04) \
     SYMBOL(split_compile,  0x05) \
     SYMBOL(split_type,     0x06)
+#define DW_LNCT_SYMBOLS(SYMBOL) \
+    SYMBOL(path,            0x01) \
+    SYMBOL(directory_index, 0x02) \
+    SYMBOL(timestamp,       0x03) \
+    SYMBOL(size,            0x04) \
+    SYMBOL(MD5,             0x05) \
 
 /* DWARF1 only */
 #if 0
@@ -577,6 +584,8 @@ enum dwarf_symbol_namespace {
 #define DW_FORM_ref 0x02
 #endif
 
+/* Pre-DWARF4 */
+#if 1
 #define DW_AT_stride_size 0x2e /* DWARF2 name */
 #define DW_AT_stride      0x51 /* DWARF3 (do not use) */
 /*  Early releases of libdwarf had the
@@ -596,6 +605,7 @@ enum dwarf_symbol_namespace {
 #define DW_FORM_GNU_str_index  0x1f02 /* GNU extension, somewhat like DW_FORM_strp */
 #define DW_FORM_GNU_ref_alt    0x1f20 /* GNU extension. Offset in .debug_info. */
 #define DW_FORM_GNU_strp_alt   0x1f21 /* GNU extension. Offset in .debug_str of another object file. */
+#endif
 
 #define DW_ATE_lo_user 0x80
 #define DW_ATE_hi_user 0xff
@@ -603,14 +613,14 @@ enum dwarf_symbol_namespace {
 #define DW_CC_lo_user 0x40
 #define DW_CC_hi_user 0xff
 
-#define DW_CFA_lo_user 0 0x1c
-#define DW_CFA_hi_user 0 0x3f
+#define DW_CFA_lo_user 0x1c
+#define DW_CFA_hi_user 0x3f
 
 #define DW_LANG_lo_user 0x8000
 #define DW_LANG_hi_user 0xffff
 
-#define DW_LNE_lo_user                  0x80 /* DWARF3 */
-#define DW_LNE_hi_user                  0xff /* DWARF3 */
+#define DW_LNE_lo_user 0x80 /* DWARF3 */
+#define DW_LNE_hi_user 0xff /* DWARF3 */
 
 #define DW_OP_lo_user 0xe0
 #define DW_OP_hi_user 0xff
@@ -646,6 +656,9 @@ enum dwarf_symbol_namespace {
 #define DW_LNS_set_subprogram           0x0d /* Logicals table only */
 #define DW_LNS_inlined_call             0x0e /* Logicals table only */
 #define DW_LNS_pop_context              0x0f /* Logicals table only */
+
+#define DW_LNCT_lo_user 0x2000
+#define DW_LNCT_hi_user 0x3fff
 
 #define DW_DEFSYM(NAME, VALUE) DW_CONCAT3(DW_PREFIX, _, NAME) = VALUE,
 enum dwarf_symbols_at {
@@ -688,6 +701,11 @@ DW_VIS_SYMBOLS(DW_DEFSYM)
 enum dwarf_symbols_ut {
 #define DW_PREFIX DW_UT
 DW_UT_SYMBOLS(DW_DEFSYM)
+#undef DW_PREFIX
+};
+enum dwarf_symbols_lnct {
+#define DW_PREFIX DW_LNCT
+DW_LNCT_SYMBOLS(DW_DEFSYM)
 #undef DW_PREFIX
 };
 #undef DW_DEFSYM
