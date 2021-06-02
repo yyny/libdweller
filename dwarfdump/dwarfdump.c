@@ -18,7 +18,9 @@
 #include <dweller/dwarf.h>
 #include <dweller/libc.h>
 #include <dweller/elf.h>
+#include <dweller/stream.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -55,15 +57,15 @@ static size_t buffersz = 0;
 #define output(data, size) do { if (buffersz >= 4096 * 4096 - 4096 * 2) flushoutput(data, size); } while (0)
 static void flushoutput(const char *data, size_t size)
 {
-    int nwritten = 0;
     do {
         int res = write(STDOUT_FILENO, data, size);
         if (res == -1) {
             if (errno == EINTR || errno == EAGAIN) continue;
             abort();
         }
-        nwritten += res;
-    } while (nwritten < size);
+        data += res;
+        size -= res;
+    } while (size);
     buffersz = 0;
 }
 static bool checkquota(size_t n) {
@@ -85,12 +87,20 @@ static void ensurequota(size_t n) {
     } while (0)
 static void put(char c) {
     buffer[buffersz++] = c;
+    /* flushoutput(buffer, buffersz); */
 }
+/* Avoid calling put in the functions below to make profiling easier */
 static void putcstr(const char *str) {
-    for (; *str; str++) put(*str);
+    while (*str) put(*str++);
 }
 static void putindent(int n) {
-    for (; n; n--) put(' ');
+    /*
+    NOTE
+    N can never be negative but this function
+    is noticably faster using signed ints
+    */
+    memset(buffer + buffersz, ' ', n);
+    buffersz += n;
 }
 static void putint(uint64_t val, int padleft) {
     char strbuf[20]; /* ceil(log10(2 ** 64)) = 20 */
@@ -156,18 +166,23 @@ static void putaddr64(uint64_t val) {
         put("0123456789abcdef"[hexdgt]);
     }
 }
-#define putaddr(val) putaddr32(val) /* FIXME: Figure this out depending on DWARF32 or DWARF64 */
+#define putaddr(val) putaddr64(val) /* FIXME: Figure this out depending on DWARF32 or DWARF64 */
 static void puturi(const char *path) {
     /* TODO */
     /* TODO: Also do bounds checking on buffersz? */
     putcstr(path);
 }
+#define puturichar(c) put(c)
 
 static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_program *program, struct dwarf_line_program_state *state, struct dwarf_line_program_state *last_state)
 {
+    /* FIXME: Check that state->file is actually valid and not out of bounds */
+    if (program->files[state->file - 1].name.len == -1) {
+        abort(); /* TODO */
+    }
     const size_t maxn = STRLEN(
         "0xffffffffffffffff [2147483647, 2147483647] NS BB ET PE EB IS=0xffffffffffffffff DI=0xffffffffffffffff uri: \"\"\n"
-    ) + program->files[state->file - 1].namesz;
+    ) + program->files[state->file - 1].name.len;
     ensurequota(maxn);
     putaddr(state->address);
     putlit(" [");
@@ -183,9 +198,25 @@ static enum dw_cb_status line_row_cb(struct dwarf *dwarf, struct dwarf_line_prog
     if (state->isa != last_state->isa) { putlit(" IS="); puthex(state->isa, 0); }
     if (state->discriminator) { putlit(" DI="); puthex(state->discriminator, 0); }
     if (state->file != last_state->file) {
-        const char *path = (const char *)dwarf->line.section.base + program->files[state->file - 1].name; /* FIXME: Check that state->file is actually valid and not out of bounds */
+        struct dwarf_fileinfo file = program->files[state->file - 1];
+        dw_stream_t stream;
+        switch (file.name.section) {
+        case DWARF_SECTION_LINE:
+            dw_stream_initfrom(&stream, DWARF_SECTION_LINE, dwarf->line.section, dwarf->line.section_provider, file.name.off);
+            break;
+        case DWARF_SECTION_STR:
+            dw_stream_initfrom(&stream, DWARF_SECTION_STR, dwarf->str.section, dwarf->str.section_provider, file.name.off);
+            break;
+        case DWARF_SECTION_LINESTR:
+            dw_stream_initfrom(&stream, DWARF_SECTION_LINESTR, dwarf->line_str.section, dwarf->line_str.section_provider, file.name.off);
+            break;
+        default:
+            abort();
+        }
+        /* TODO: ensurequota */
         putlit(" uri: \"");
-        puturi(path);
+        while (dw_stream_tell(&stream) < file.name.off + file.name.len)
+                puturichar(dw_stream_get8(&stream));
         put('\"');
     }
     put('\n');
@@ -195,7 +226,7 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
 {
     const size_t maxn =
         STRLEN(" Opcodes:\n")
-      + STRLEN("  Opcode 0xff has 255 argument(s)\n") * 255
+      + STRLEN("  Opcode 0xff has 255 argument(s)\n") * (program->first_special_opcode - 1)
       + STRLEN("\n")
       + STRLEN(" The Include Directory Table\n")
       + program->num_include_directories * STRLEN("  2147483647\t\n")
@@ -221,11 +252,35 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
     put('\n');
     putlit(" The Include Directory Table\n");
     for (i=0; i < program->num_include_directories; i++) {
-        const char *path = (const char *)dwarf->line.section.base + program->include_directories[i];
+        struct dwarf_pathinfo info = program->include_directories[i];
         putlit("  ");
         putint(i, 0);
         put('\t');
-        puturi(path);
+        switch (info.form) {
+        case DW_FORM_string:
+            {
+                dw_str_t str = info.value.str;
+                dw_stream_t stream;
+                dw_stream_initfrom(&stream, DWARF_SECTION_LINE, dwarf->line.section, dwarf->line.section_provider, str.off);
+                ensurequota(str.len); /* FIXME: ensurequota + tail */
+                while (dw_stream_tell(&stream) < str.off + str.len)
+                    put(dw_stream_get8(&stream));
+            }
+            break;
+        case DW_FORM_strp:
+            {
+                dw_stroff_t stroff = info.value.stroff;
+                size_t strlength = 0;
+                dw_stream_t stream;
+                dw_stream_initfrom(&stream, DWARF_SECTION_STR, dwarf->str.section, dwarf->str.section_provider, stroff);
+                while (dw_stream_get8(&stream)) strlength++;
+                dw_stream_seek(&stream, stroff);
+                ensurequota(strlength); /* FIXME: ensurequota + tail */
+                while (dw_stream_peak8(&stream))
+                    put(dw_stream_get8(&stream));
+            }
+            break;
+        }
         put('\n');
     }
     put('\n');
@@ -233,7 +288,6 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
     putlit("  Entry\tDir\tTime\tSize\tName\n");
     for (i=0; i < program->num_files; i++) {
         struct dwarf_fileinfo *info = &program->files[i];
-        const char *path = (const char *)dwarf->line.section.base + info->name;
         putlit("  ");
         putint(i + 1, 0);
         put('\t');
@@ -243,7 +297,25 @@ static enum dw_cb_status line_cb(struct dwarf *dwarf, struct dwarf_line_program 
         put('\t');
         putint(info->file_size, 0);
         put('\t');
-        puturi(path);
+        {
+            dw_stream_t stream;
+            switch (info->name.section) {
+            case DWARF_SECTION_LINE:
+                dw_stream_initfrom(&stream, DWARF_SECTION_LINE, dwarf->line.section, dwarf->line.section_provider, info->name.off);
+                break;
+            case DWARF_SECTION_STR:
+                dw_stream_initfrom(&stream, DWARF_SECTION_STR, dwarf->str.section, dwarf->str.section_provider, info->name.off);
+                break;
+            case DWARF_SECTION_LINESTR:
+                dw_stream_initfrom(&stream, DWARF_SECTION_LINESTR, dwarf->line_str.section, dwarf->line_str.section_provider, info->name.off);
+                break;
+            default:
+                abort();
+            }
+            /* TODO: ensurequota */
+            while (dw_stream_peak8(&stream))
+                puturichar(dw_stream_get8(&stream));
+        }
         put('\n');
     }
     put('\n');
@@ -376,7 +448,7 @@ static enum dw_cb_status aranges_cb(struct dwarf *dwarf, dwarf_aranges_t *arange
 
     return DW_CB_OK;
 }
-static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_attr_t *attr)
+static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_unit_t *unit, dwarf_die_t *die, dwarf_attr_t *attr)
 {
     const size_t maxn
      = die->depth * 2
@@ -416,6 +488,8 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
     case DW_FORM_ref4:
     case DW_FORM_data8:
     case DW_FORM_ref8:
+    case DW_FORM_udata:
+    case DW_FORM_sdata:
         puthex2(attr->value.val, 0);
         break;
     case DW_FORM_addr:
@@ -425,19 +499,32 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
         puthex2(attr->value.off, 0);
         break;
     case DW_FORM_string:
-        ensurequota(strlen(attr->value.cstr) + STRLEN("''"));
-        put('\'');
-        putcstr(attr->value.cstr);
-        put('\'');
+        {
+            dw_str_t str = attr->value.str;
+            assert(unit->die.section == DWARF_SECTION_INFO);
+            dw_stream_t stream;
+            dw_stream_initfrom(&stream, DWARF_SECTION_INFO, dwarf->info.section, dwarf->info.section_provider, str.off);
+            ensurequota(str.len + STRLEN("''")); /* FIXME: ensurequota + tail */
+            put('\'');
+            while (dw_stream_tell(&stream) < str.off + str.len)
+                put(dw_stream_get8(&stream));
+            put('\'');
+        }
         break;
     case DW_FORM_strp:
         {
-            const char *str = (const char *)dwarf->str.section.base + attr->value.stroff;
-            ensurequota(strlen(str) + STRLEN("'' (offset 0xffffffffffffffff)"));
+            dw_stroff_t stroff = attr->value.stroff;
+            size_t strlength = 0;
+            dw_stream_t stream;
+            dw_stream_initfrom(&stream, DWARF_SECTION_STR, dwarf->str.section, dwarf->str.section_provider, stroff);
+            while (dw_stream_get8(&stream)) strlength++;
+            dw_stream_seek(&stream, stroff);
+            ensurequota(strlength + STRLEN("'' (offset 0xffffffffffffffff)")); /* FIXME: ensurequota + tail */
             put('\'');
-            putcstr(str);
+            while (dw_stream_peak8(&stream))
+                put(dw_stream_get8(&stream));
             putlit("\' (offset ");
-            puthex2(attr->value.stroff, 0);
+            puthex2(stroff, 0);
             put(')');
         }
         break;
@@ -456,7 +543,7 @@ static enum dw_cb_status attr_cb(struct dwarf *dwarf, dwarf_die_t *die, dwarf_at
     put('\n');
     return DW_CB_OK;
 }
-static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
+static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_unit_t *unit, dwarf_die_t *die)
 {
     const size_t maxn = STRLEN(
         "<0xffffffffffffffff>  [has children]\n"
@@ -469,7 +556,7 @@ static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_die_t *die)
     FIXME: die->depth would have to be unreasonably high for a out of memory situation
     Maybe check die->depth somewhere else in the code to ensure it doesn't get too big
     */
-    dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, die->abbrev_table, die->abbrev_code);
+    dwarf_abbrev_t *abbrev = dwarf_abbrev_table_find_abbrev_from_code(dwarf, unit->abbrev_table, die->abbrev_code);
     const char *tag_name = dwarf_get_symbol_name(DW_TAG, die->tag);
     putindent(die->depth * 2);
     put('<');
@@ -538,9 +625,15 @@ int main(int argc, const char *argv[])
     dwarf->abbrev_attr_cb = abbrev_attr_cb;
     size_t size = 0;
     const uint8_t *data = mapfile(argv[1], &size);
+    if (data == MAP_FAILED) {
+        perror(argv[1]);
+        exit(1);
+    }
     loadelf(dwarf, data, size, &errinfo);
     if (data == MAP_FAILED) goto fail;
-    dwarf_parse(dwarf, &errinfo);
+    if (!dwarf_parse(dwarf, &errinfo)) {
+        dwarf_write_error(&errinfo, &dweller_libc_stderr_writer);
+    }
     flushoutput(buffer, buffersz);
 
 fail:
@@ -551,6 +644,72 @@ fail:
     }
     dwarf_fini(&dwarf, &errinfo);
     return 0;
+}
+
+struct provider {
+    struct dwarf_section_provider provider;
+    struct dwarf_section section;
+    dw_u64_t off;
+};
+int provider_reader(dw_reader_t *self, void *data, size_t size)
+{
+    struct provider *provider = (struct provider *)((char *)self - offsetof(struct provider, provider.reader));
+    if (provider->off >= provider->section.size)
+        return -1;
+    if (size > provider->section.size - provider->off)
+        size = provider->section.size - provider->off;
+#if 0
+    fprintf(stderr, "Reading %zu bytes at %zu (of %zu)\n", size, provider->off, provider->section.size);
+#endif
+    memcpy(data, provider->section.base + provider->off, size);
+    provider->off += size;
+    return size;
+}
+dw_i64_t provider_seeker(dw_seeker_t *self, dw_i64_t off, int whence)
+{
+    struct provider *provider = (struct provider *)((char *)self - offsetof(struct provider, provider.seeker));
+    if (whence == DW_SEEK_CUR) off = provider->off + off;
+    if (whence == DW_SEEK_END) off = provider->section.size - off;
+#if 0
+    fprintf(stderr, "Seeking to %zu of %zu\n", off, provider->section.size);
+#endif
+    provider->off = off;
+    return off;
+}
+const void *provider_mapper(dw_mapper_t *self, dw_i64_t off, int whence, size_t length)
+{
+    struct provider *provider = (struct provider *)((char *)self - offsetof(struct provider, provider.mapper));
+    if (whence == DW_UNMAP) return NULL;
+    if (whence == DW_SEEK_CUR) off = provider->off + off;
+    if (whence == DW_SEEK_END) off = provider->section.size - off;
+    return provider->section.base + off;
+}
+
+static void add_section(struct dwarf *dwarf, const char *name, const uint8_t *base, size_t size, struct dwarf_errinfo *errinfo)
+{
+#if 0
+    struct provider *provider = malloc(sizeof(struct provider));
+    provider->provider.reader = provider_reader;
+    provider->provider.seeker = provider_seeker;
+    provider->provider.mapper = provider_mapper;
+    provider->section.base = base;
+    provider->section.size = size;
+    provider->off = 0;
+    if      (strcmp(name, ".debug_abbrev") == 0) dwarf_add_section(dwarf, DWARF_SECTION_ABBREV, &provider->provider, errinfo);
+    else if (strcmp(name, ".debug_aranges") == 0) dwarf_add_section(dwarf, DWARF_SECTION_ARANGES, &provider->provider, errinfo);
+    else if (strcmp(name, ".debug_info") == 0) dwarf_add_section(dwarf, DWARF_SECTION_INFO, &provider->provider, errinfo);
+    else if (strcmp(name, ".debug_line") == 0) dwarf_add_section(dwarf, DWARF_SECTION_LINE, &provider->provider, errinfo);
+    else if (strcmp(name, ".debug_str") == 0) dwarf_add_section(dwarf, DWARF_SECTION_STR, &provider->provider, errinfo);
+#else
+    struct dwarf_section section;
+    section.base = base;
+    section.size = size;
+    if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ABBREV, section, errinfo);
+    else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ARANGES, section, errinfo);
+    else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(dwarf, DWARF_SECTION_INFO, section, errinfo);
+    else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(dwarf, DWARF_SECTION_LINE, section, errinfo);
+    else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(dwarf, DWARF_SECTION_STR, section, errinfo);
+#endif
 }
 
 static void loadelf32(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
@@ -567,14 +726,7 @@ static void loadelf32(struct dwarf *dwarf, const uint8_t *data, size_t size, str
         printf("%#8x:", shdr->sh_type);
         printf("'%s'", name);
         printf("\n");
-        struct dwarf_section section;
-        section.base = data + shdr->sh_offset;
-        section.size = shdr->sh_size;
-        if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ABBREV, section, errinfo);
-        else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ARANGES, section, errinfo);
-        else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(dwarf, DWARF_SECTION_INFO, section, errinfo);
-        else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(dwarf, DWARF_SECTION_LINE, section, errinfo);
-        else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(dwarf, DWARF_SECTION_STR, section, errinfo);
+        add_section(dwarf, name, data + shdr->sh_offset, shdr->sh_size, errinfo);
     }
 }
 static void loadelf64(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
@@ -591,14 +743,7 @@ static void loadelf64(struct dwarf *dwarf, const uint8_t *data, size_t size, str
         printf("%#8x:", shdr->sh_type);
         printf("'%s'", name);
         printf("\n");
-        struct dwarf_section section;
-        section.base = data + shdr->sh_offset;
-        section.size = shdr->sh_size;
-        if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ABBREV, section, errinfo);
-        else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(dwarf, DWARF_SECTION_ARANGES, section, errinfo);
-        else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(dwarf, DWARF_SECTION_INFO, section, errinfo);
-        else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(dwarf, DWARF_SECTION_LINE, section, errinfo);
-        else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(dwarf, DWARF_SECTION_STR, section, errinfo);
+        add_section(dwarf, name, data + shdr->sh_offset, shdr->sh_size, errinfo);
     }
 }
 static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo)
