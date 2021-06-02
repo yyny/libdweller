@@ -51,6 +51,17 @@ typedef dw_mustuse int (*dw_writer_t)(DW_SELF *self, const void *data, size_t si
 /* A simple read callback with the same interface as read(2).
  */
 typedef dw_mustuse int (*dw_reader_t)(DW_SELF *self, void *data, size_t size) dw_nonnull(1, 2);
+/* A simple seek callback with an interface similair to lseek(2).
+ */
+#define DW_SEEK_SET 0
+#define DW_SEEK_CUR 1
+#define DW_SEEK_END 2
+typedef dw_i64_t (*dw_seeker_t)(DW_SELF *self, dw_i64_t off, int whence) dw_nonnull(1);
+/* A callback for requesting a block of memory at a given position.
+ * Pass `DW_UNMAP` to `whence` to unmap the mapped memory block.
+ */
+#define DW_UNMAP 0xffff
+typedef dw_mustuse void *(*dw_mapper_t)(DW_SELF *self, dw_i64_t off, int whence, size_t length) dw_nonnull(1);
 /* Defines the type of an allocation request.
  * The allocation request type determines what kind of memory is requested,
  * and how the memory will behave.
