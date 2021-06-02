@@ -600,11 +600,6 @@ enum dwarf_symbol_namespace {
 /*  Do not use DW_TAG_mutable_type
  */
 #define DW_TAG_mutable_type 0x3e /* Withdrawn from DWARF3 by DWARF3f. */
-
-#define DW_FORM_GNU_addr_index 0x1f01 /* GNU extension in debug_info.dwo.*/
-#define DW_FORM_GNU_str_index  0x1f02 /* GNU extension, somewhat like DW_FORM_strp */
-#define DW_FORM_GNU_ref_alt    0x1f20 /* GNU extension. Offset in .debug_info. */
-#define DW_FORM_GNU_strp_alt   0x1f21 /* GNU extension. Offset in .debug_str of another object file. */
 #endif
 
 #define DW_ATE_lo_user 0x80
@@ -630,20 +625,6 @@ enum dwarf_symbol_namespace {
 
 #define DW_MACINFO_vendor_ext 0xff
 
-/* HP extensions. */
-#define DW_LNE_HP_negate_is_UV_update      0x11 /* 17 HP */
-#define DW_LNE_HP_push_context             0x12 /* 18 HP */
-#define DW_LNE_HP_pop_context              0x13 /* 19 HP */
-#define DW_LNE_HP_set_file_line_column     0x14 /* 20 HP */
-#define DW_LNE_HP_set_routine_name         0x15 /* 21 HP */
-#define DW_LNE_HP_set_sequence             0x16 /* 22 HP */
-#define DW_LNE_HP_negate_post_semantics    0x17 /* 23 HP */
-#define DW_LNE_HP_negate_function_exit     0x18 /* 24 HP */
-#define DW_LNE_HP_negate_front_end_logical 0x19 /* 25 HP */
-#define DW_LNE_HP_define_proc              0x20 /* 32 HP */
-
-#define DW_LNE_HP_source_file_correlation  0x80 /* HP */
-
 /* Experimental two-level line tables. NOT STD DWARF5
  * Not saying GNU or anything. There are no
  * DW_LNS_lo_user or DW_LNS_hi_user values though.
@@ -659,6 +640,8 @@ enum dwarf_symbol_namespace {
 
 #define DW_LNCT_lo_user 0x2000
 #define DW_LNCT_hi_user 0x3fff
+
+#include <dweller/symbols_ext.h>
 
 #define DW_DEFSYM(NAME, VALUE) DW_CONCAT3(DW_PREFIX, _, NAME) = VALUE,
 enum dwarf_symbols_at {
