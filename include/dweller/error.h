@@ -73,5 +73,6 @@ struct dwarf_errinfo {
 };
 
 #define DWARF_ERRINFO_INIT { DW_OK }
-#define dwarf_has_error(ERROR) (dw_isnull(ERROR) && (ERROR)->err_code != DW_OK)
+#define dwarf_has_error(ERROR) (!dw_isnull(ERROR) && (ERROR)->err_code != DW_OK)
+
 #endif /* DWELLER_ERROR_H */
