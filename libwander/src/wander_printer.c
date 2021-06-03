@@ -155,7 +155,7 @@ WANDER_FUN(int) wander_print(wander_printer_t *printer, wander_backtrace_t *back
     wander_printer_writestr(printer, "Stack trace (most recent call last):\n");
     size_t max_len = wander_log10(backtrace->depth);
     for (size_t i=backtrace->offset; i < backtrace->depth; i++) {
-        size_t idx = backtrace->depth - i - 1;
+        size_t idx = backtrace->depth - (i - backtrace->offset) - 1;
         wander_frame_t frame = wander_backtrace_frame(backtrace, idx);
         wander_resolution_t resolution_buffer;
         wander_resolution_t *resolution = wander_resolve_frame_safe(wander_global.resolver, frame, &resolution_buffer);

@@ -121,6 +121,8 @@ WANDER_FUN(int) wander_platform_init(wander_platform_t *platform)
     goto success;
 #endif
     platform->method = WANDER_UNWIND_METHOD_NONE;
+    platform->sym_restore = NULL;
+    platform->sym_restore_rt = NULL;
     return -1;
 
 success:

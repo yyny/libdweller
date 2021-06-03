@@ -1,10 +1,6 @@
 #ifndef WANDER_PLATFORM_H
 #define WANDER_PLATFORM_H
 
-#if defined(__linux__)
-# define _DEFAULT_SOURCE /* for `syscall` */
-#endif
-
 #include <libwander/wander.h>
 #include <libwander/wander_printer.h>
 
@@ -105,6 +101,8 @@ struct wander_platform {
         } naive;
 #endif
     } methods;
+    void *sym_restore;
+    void *sym_restore_rt;
 };
 
 WANDER_INTERNAL(int)  wander_platform_init(wander_platform_t *platform);

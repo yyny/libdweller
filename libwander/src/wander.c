@@ -19,9 +19,10 @@ static void wander_sigaction_handler(int signo, siginfo_t *info, void *ucontext)
 
 WANDER_FUN(int) wander_init(void)
 {
+    int res = wander_platform_init(&wander_global.platform);
     wander_global.resolver = wander_resolver_create(WANDER_CONFIG_MAX_STACK_DEPTH, WANDER_CONFIG_MAX_SOURCE_LOCATIONS);
     wander_platform_init_root_frame(&wander_global.platform);
-    return wander_platform_init(&wander_global.platform);
+    return res;
 }
 WANDER_FUN(void) wander_fini(void)
 {
@@ -70,7 +71,22 @@ WANDER_FUN(void) wander_handle_sigaction(int signo, void *info, void *ucontext)
 #endif
     }
     wander_backtrace_t backtrace = wander_backtrace_safe(buffer, WANDER_CONFIG_MAX_STACK_DEPTH);
-    wander_backtrace_rebase(&backtrace, error_addr);
+#if 1
+    /* Skip all the signal frames */
+    if (wander_backtrace_rebase(&backtrace, error_addr) != NULL) goto print_backtrace;
+    /* We didn't find the origin frame of the signal,
+     * try to find a __restore or __restore_rt stack frame instead.
+     */
+    if (wander_backtrace_rebase(&backtrace, wander_global.platform.sym_restore) != NULL) {
+        wander_backtrace_skip(&backtrace, 1);
+        goto print_backtrace;
+    }
+    if (wander_backtrace_rebase(&backtrace, wander_global.platform.sym_restore_rt) != NULL) {
+        wander_backtrace_skip(&backtrace, 1);
+        goto print_backtrace;
+    }
+#endif
+print_backtrace:
     wander_print(&wander_default_safe_printer, &backtrace);
     if (info) {
 #if _XOPEN_SOURCE >= 700 || _POSIX_C_SOURCE >= 200809L
@@ -217,6 +233,7 @@ WANDER_FUN(wander_backtrace_t) wander_backtrace_safe(void **buffer, size_t max_d
  * until it is on top.
  * Pass `NULL` to revert the backtrace to it's original value,
  * before any stackframes were discarded.
+ * Returns NULL if `base` could not be found.
  *
  * This function is AS-safe.
  */
@@ -229,11 +246,11 @@ WANDER_FUN(wander_backtrace_t*) wander_backtrace_rebase(wander_backtrace_t *back
         for (offset = backtrace->offset; offset < backtrace->depth; offset++) {
             if (backtrace->frames[offset] == base) {
                 backtrace->offset = offset;
-                break;
+                return backtrace;
             }
         }
     }
-    return backtrace;
+    return NULL;
 }
 /**
  * Discard the topmost `n` stack frames.

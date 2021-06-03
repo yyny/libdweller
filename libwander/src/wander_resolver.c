@@ -1,5 +1,6 @@
-#define _GNU_SOURCE
 #include <libwander/wander.h>
+
+#include "wander_internal.h"
 
 #include <assert.h>
 
@@ -515,6 +516,42 @@ WANDER_FUN(wander_resolver_t*) wander_resolver_create(size_t max_depth, size_t m
     resolver->debug_dir = open("/usr/lib/debug/", O_RDONLY);
     resolver->symbols = malloc(max_depth * sizeof(struct symbol));
     dl_iterate_phdr(phdr_iterate_callback, resolver);
+    if (wander_global.platform.sym_restore == NULL && wander_global.platform.sym_restore_rt == NULL) {
+        for (size_t i=0; i < resolver->num_object_files; i++) {
+            struct object_file *object_file = &resolver->object_files[i];
+            Elf64_Ehdr *ehdr = (Elf64_Ehdr *)object_file->data;
+            if (ehdr == NULL) continue; /* object file is not mapped */
+            bool is_libc = strstr(object_file->name, "/libc.so"); /* Do a very rough comparison so it works on multi-arch setups too */
+            if (!is_libc) continue;
+            Elf64_Shdr *shdrs = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff);
+            for (size_t j=0; j < ehdr->e_shnum; j++) {
+                assert(sizeof(Elf64_Shdr) == ehdr->e_shentsize);
+                Elf64_Shdr *shdr = &shdrs[j];
+                switch (shdr->sh_type) {
+                case SHT_SYMTAB:
+                    {
+                        Elf64_Shdr *symtab = shdr;
+                        Elf64_Shdr *strh = &shdrs[symtab->sh_link];
+                        char *strs = (char *)(object_file->data + strh->sh_offset);
+                        Elf64_Sym *sym = (Elf64_Sym *)(object_file->data + symtab->sh_offset);
+                        size_t size = symtab->sh_size;
+                        while (size > sizeof(Elf64_Sym)) {
+                            /* FIXME: Are these symbols linux-specific? */
+                            if (strcmp(&strs[sym->st_name], "__restore") == 0) {
+                                wander_global.platform.sym_restore = (void *)(object_file->base + sym->st_value);
+                            }
+                            if (strcmp(&strs[sym->st_name], "__restore_rt") == 0) {
+                                wander_global.platform.sym_restore_rt = (void *)(object_file->base + sym->st_value);
+                            }
+                            sym++;
+                            size -= sizeof(Elf64_Sym);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
     return resolver;
 }
 WANDER_FUN(int) wander_resolver_load(wander_resolver_t *resolver, wander_backtrace_t *backtrace)
@@ -606,10 +643,10 @@ WANDER_FUN(int) wander_resolver_load(wander_resolver_t *resolver, wander_backtra
         object_file->dwarf->arange_cb = my_arange_cb;
         object_file->dwarf->line_cb = my_line_cb;
         object_file->dwarf->cu_cb = my_cu_cb;
-        dwarf_parse_section(object_file->dwarf, DWARF_SECTION_ABBREV, &object_file->errinfo);
-        dwarf_parse_section(object_file->dwarf, DWARF_SECTION_ARANGES, &object_file->errinfo);
-        dwarf_parse_section(object_file->dwarf, DWARF_SECTION_INFO, &object_file->errinfo);
-        dwarf_parse_section(object_file->dwarf, DWARF_SECTION_LINE, &object_file->errinfo);
+        if (dwarf_has_section(object_file->dwarf, DWARF_SECTION_ABBREV, &object_file->errinfo)) dwarf_parse_section(object_file->dwarf, DWARF_SECTION_ABBREV, &object_file->errinfo);
+        if (dwarf_has_section(object_file->dwarf, DWARF_SECTION_ARANGES, &object_file->errinfo)) dwarf_parse_section(object_file->dwarf, DWARF_SECTION_ARANGES, &object_file->errinfo);
+        if (dwarf_has_section(object_file->dwarf, DWARF_SECTION_INFO, &object_file->errinfo)) dwarf_parse_section(object_file->dwarf, DWARF_SECTION_INFO, &object_file->errinfo);
+        if (dwarf_has_section(object_file->dwarf, DWARF_SECTION_LINE, &object_file->errinfo)) dwarf_parse_section(object_file->dwarf, DWARF_SECTION_LINE, &object_file->errinfo);
         if (dwarf_has_error(&object_file->errinfo)) {
             dwarf_write_error(&object_file->errinfo, &dweller_libc_stderr_writer);
         }

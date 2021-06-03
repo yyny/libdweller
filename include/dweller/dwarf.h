@@ -395,6 +395,11 @@ DWAPI(bool) dwarf_load_section(struct dwarf *dwarf, enum dwarf_section_namespace
  */
 DWAPI(bool) dwarf_add_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_section_provider *provider, struct dwarf_errinfo *errinfo) dw_nonnull(1);
 
+/**
+ * Returns true if the given section is loaded.
+ */
+DWAPI(bool) dwarf_has_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo) dw_nonnull(1);
+
 typedef struct dwarf_iter dwarf_iter_t;
 typedef struct dwarf_aranges_iter dwarf_aranges_iter_t;
 typedef struct dwarf_arange_iter dwarf_arange_iter_t;

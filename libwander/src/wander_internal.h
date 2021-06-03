@@ -1,7 +1,6 @@
 #ifndef WANDER_INTERNAL_H
 #define WANDER_INTERNAL_H
 
-#define _XOPEN_SOURCE 700
 #include <signal.h> /* struct sigaction */
 
 #include "wander_platform.h"

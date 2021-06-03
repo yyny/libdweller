@@ -850,6 +850,24 @@ bool dwarf_add_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, str
     return true;
 }
 
+bool dwarf_has_section(struct dwarf *dwarf, enum dwarf_section_namespace ns, struct dwarf_errinfo *errinfo)
+{
+    if (has_error(errinfo)) return false;
+    if (dw_unlikely(dw_isnull(dwarf))) error(argument_error(1, "dwarf", __func__, "pointer is NULL"));
+
+    switch (ns) {
+    case DWARF_SECTION_ARANGES: return dwarf->aranges.section.base != NULL || dwarf->aranges.section_provider != NULL;
+    case DWARF_SECTION_INFO:    return dwarf->info.section.base != NULL || dwarf->info.section_provider != NULL;
+    case DWARF_SECTION_LINE:    return dwarf->line.section.base != NULL || dwarf->line.section_provider != NULL;
+    case DWARF_SECTION_ABBREV:  return dwarf->abbrev.section.base != NULL || dwarf->abbrev.section_provider != NULL;
+    case DWARF_SECTION_STR:     return dwarf->str.section.base != NULL || dwarf->str.section_provider != NULL;
+    default:
+        break;
+    }
+
+    return false;
+}
+
 bool dwarf_init(struct dwarf **dwarf, dw_alloc_t *allocator, struct dwarf_errinfo *errinfo)
 {
     struct dwarf_alloc_req allocation_request = {
