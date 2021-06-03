@@ -1,3 +1,32 @@
+`libwander` is a simple stack unwinding library capable of producing AS-safe backtraces.
+`libwander` can currently only resolve debug info using `libdweller`,
+although support for `libdwarf`, `libdw` and possibly others might at some point be added aswell.
+
+For an example, see `./examples/01_stacktrace.c`.
+An example output produced by `libwander`:
+
+```
+$ ./build/examples/stacktrace
+Stack trace (most recent call last):
+#14 0x0000563f037ff09a in [_start + 0x2a] at ../sysdeps/x86_64/start.S:120
+#13 0x00007fdc24098e0a in __libc_start_main() at ../csu/libc-start.c:314
+#12 0x0000563f037ff1c3 in main() at ../examples/01_stacktrace.c:24
+#11 0x0000563f037ff192 in recurse() at ../examples/01_stacktrace.c:16
+#10 0x0000563f037ff192 in recurse() at ../examples/01_stacktrace.c:16
+#9  0x0000563f037ff192 in recurse() at ../examples/01_stacktrace.c:16
+#8  0x0000563f037ff192 in recurse() at ../examples/01_stacktrace.c:16
+#7  0x0000563f037ff192 in recurse() at ../examples/01_stacktrace.c:16
+#6  0x0000563f037ff199 in recurse() at ../examples/01_stacktrace.c:17
+#5  0x0000563f037ff166 in inlined_function() at ../examples/01_stacktrace.c:11
+#4  0x00007fdc240ae000 in [__restore_rt + 0x0] from /usr/lib/libc.so.6
+#3  0x00007fdc242554cd in wander_sigaction_handler() at ../libwander/src/wander.c:17
+#2  0x00007fdc242555c2 in wander_handle_sigaction() at ../libwander/src/wander.c:72
+#1  0x00007fdc24255b4f in wander_backtrace_safe() at ../libwander/src/wander.c:213
+#0  0x00007fdc242564a1 in wander_platform_backtrace() at ../libwander/src/wander_platform.c:269
+Segmentation fault (Address not mapped to object [0xdeadbeef])
+Segmentation fault
+```
+
 # Unwinding methods
 
 `libwander` will try several method for obtaining unwinding information:
