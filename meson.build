@@ -1,4 +1,9 @@
-project('libdweller', 'c', 'cpp', default_options : ['c_std=c11'])
+project('libdweller', 'c', 'cpp', default_options : ['c_std=c11', 'warning_level=3'])
+
+cc = meson.get_compiler('c')
+if cc.has_argument('-fno-delete-null-pointer-checks')
+    add_project_arguments([ '-fno-delete-null-pointer-checks' ], language : 'c')
+endif
 
 libdweller_src = files('src/dwarf.c')
 libdweller_inc = include_directories('include')

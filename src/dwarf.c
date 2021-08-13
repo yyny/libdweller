@@ -15,8 +15,6 @@
  * limitations under the License.
  *
  ****************************************************************************/
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnonnull-compare"
 #include <dweller/dwarf.h>
 #include <dweller/util.h>
 #include <dweller/stream.h>
@@ -910,4 +908,3 @@ void dwarf_fini(struct dwarf **dwarf, const struct dwarf_errinfo *errinfo)
     }
     *dwarf = NULL; /* Ensure it is `NULL` */
 }
-#pragma GCC diagnostic pop

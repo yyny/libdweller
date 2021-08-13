@@ -30,16 +30,29 @@
 
 #  define dw_has_include(header) __has_include(header)
 
+/* We would prefer to simply ignore this warning directly inside dw_isnull,
+ * but unfortunately, GCC ignores
+ *
+ *     _Pragma("GCC diagnostic ignored "-Wnonnull-compare")
+ *
+ * inside a normal expressions. We can work around this with a helper.
+ */
+#if 0
 #  define dw_isnull(x) \
-    ({ \
+    __extension__ ({ \
         _Pragma("GCC diagnostic push") \
         _Pragma("GCC diagnostic ignored \"-Waddress\"") \
+        _Pragma("GCC diagnostic ignored \"-Wnonnull-compare\"") \
         bool res_ = (x) == NULL; \
         _Pragma("GCC diagnostic pop") \
         res_; \
     })
+#else
+static dw_unused dw_isnull_helper(void *ptr) { return ptr == NULL; }
+#  define dw_isnull(x) dw_isnull_helper(x)
+#endif
 #  define DW_USE(x) \
-    ({ \
+    __extension__ ({ \
         _Pragma("GCC diagnostic push") \
         _Pragma("GCC diagnostic ignored \"-Wunused-result\"") \
         dw_unused __auto_type res_ = (x); \
