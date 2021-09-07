@@ -1,6 +1,5 @@
 #include "wander_platform.h"
 
-#include <dlfcn.h> /* dlopen */
 #include <stdint.h>
 
 #define WANDER_QUOTE(x) #x
@@ -52,56 +51,80 @@ label:
 
 WANDER_FUN(int) wander_platform_init(wander_platform_t *platform)
 {
-    void *handle;
+    wander_libhandle_t handle;
+#if WANDER_CONFIG_UNWIND_METHOD_DBGHELP && defined(_WIN32)
+    {
+        handle = wander_dlopen("DBGHELP.DLL");
+        if (handle) {
+            platform->method = WANDER_UNWIND_METHOD_DBGHELP;
+            struct wander_method_dbghelp *method = &platform->methods.dbghelp;
+            method->handle = handle;
+            *(void **)(&method->CaptureStackBackTrace) = wander_dlsym(handle, "CaptureStackBackTrace");
+            if (method->CaptureStackBackTrace)
+                goto success;
+            wander_dlclose(handle);
+        }
+        handle = wander_dlopen("NTDLL.DLL");
+        if (handle) {
+            platform->method = WANDER_UNWIND_METHOD_DBGHELP;
+            struct wander_method_dbghelp *method = &platform->methods.dbghelp;
+            method->handle = handle;
+            *(void **)(&method->CaptureStackBackTrace) = wander_dlsym(handle, "RtlCaptureStackBackTrace");
+            if (method->CaptureStackBackTrace)
+                goto success;
+            wander_dlclose(handle);
+        }
+    }
+#endif
 #if WANDER_CONFIG_UNWIND_METHOD_LIBGCC
-    handle = dlopen("libgcc_s.so", RTLD_LAZY | RTLD_LOCAL);
+    handle = wander_dlopen("libgcc_s.so");
     if (!handle)
-        handle = dlopen("libgcc_s.so.1", RTLD_LAZY | RTLD_LOCAL);
+        handle = wander_dlopen("libgcc_s.so.1");
     if (!handle)
-        handle = dlopen(NULL, RTLD_LAZY | RTLD_LOCAL);
+        handle = wander_dlopen_self();
     if (handle) {
         platform->method = WANDER_UNWIND_METHOD_LIBGCC;
         struct wander_method_libgcc *method = &platform->methods.libgcc;
         method->handle = handle;
-        *(void **)(&method->_Unwind_Backtrace) = dlsym(handle, "_Unwind_Backtrace");
-        *(void **)(&method->_Unwind_GetIP)     = dlsym(handle, "_Unwind_GetIP");
+        *(void **)(&method->_Unwind_Backtrace) = wander_dlsym(handle, "_Unwind_Backtrace");
+        *(void **)(&method->_Unwind_GetIP)     = wander_dlsym(handle, "_Unwind_GetIP");
         if (method->_Unwind_Backtrace && method->_Unwind_GetIP)
             goto success;
-        dlclose(handle);
+        wander_dlclose(handle);
     }
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_LIBUNWIND
-    handle = dlopen("libunwind-generic.so", RTLD_LAZY | RTLD_LOCAL);
+    handle = wander_dlopen("libunwind-generic.so");
     if (!handle)
-        handle = dlopen("libunwind-" WANDER_STRINGIFY(UNW_TARGET) ".so", RTLD_LAZY | RTLD_LOCAL);
+        handle = wander_dlopen("libunwind-" WANDER_STRINGIFY(UNW_TARGET) ".so");
     if (handle) {
         platform->method = WANDER_UNWIND_METHOD_LIBUNWIND;
         struct wander_method_libunwind *method = &platform->methods.libunwind;
         method->handle = handle;
 #if WANDER_UNWIND_GETCONTEXT_IS_A_MACRO == 0
-        *(void **)(&method->unw_getcontext) = dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(getcontext)));
+        *(void **)(&method->unw_getcontext) = wander_dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(getcontext)));
 #endif
-        *(void **)(&method->unw_init_local) = dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(init_local)));
-        *(void **)(&method->unw_step)       = dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(step)));
-        *(void **)(&method->unw_get_reg)    = dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(get_reg)));
+        *(void **)(&method->unw_init_local) = wander_dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(init_local)));
+        *(void **)(&method->unw_step)       = wander_dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(step)));
+        *(void **)(&method->unw_get_reg)    = wander_dlsym(handle, WANDER_STRINGIFY(UNW_ARCH_OBJ(get_reg)));
 #if WANDER_UNWIND_GETCONTEXT_IS_A_MACRO
         if (method->unw_init_local && method->unw_step && method->unw_get_reg)
 #else
         if (method->unw_getcontext && method->unw_init_local && method->unw_step && method->unw_get_reg)
 #endif
             goto success;
-        dlclose(handle);
+        wander_dlclose(handle);
     }
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_GNULIBC
-    handle = dlopen("libc.so", RTLD_LAZY | RTLD_GLOBAL);
+    handle = wander_dlopen("libc.so");
     if (!handle)
-        handle = dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
+        handle = wander_dlopen("libc.so.6");
     if (handle) {
         platform->method = WANDER_UNWIND_METHOD_GNULIBC;
         struct wander_method_gnulibc *method = &platform->methods.gnulibc;
         method->handle = handle;
-        method->backtrace = dlsym(handle, "backtrace");
+        *(void **)(&method->backtrace) = wander_dlsym(handle, "backtrace");
         if (method->backtrace) {
             /* `backtrace` may end up calling malloc, but typically only
              * does so on it's first invocation.
@@ -110,7 +133,7 @@ WANDER_FUN(int) wander_platform_init(wander_platform_t *platform)
             method->backtrace(&dummy, 1);
             goto success;
         }
-        dlclose(handle);
+        wander_dlclose(handle);
     }
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_NAIVE
@@ -134,21 +157,21 @@ WANDER_FUN(void) wander_platform_fini(wander_platform_t *platform)
 #if WANDER_CONFIG_UNWIND_METHOD_LIBGCC
     case WANDER_UNWIND_METHOD_LIBGCC:
         if (platform->methods.libgcc.handle)
-            dlclose(platform->methods.libgcc.handle);
+            wander_dlclose(platform->methods.libgcc.handle);
         platform->methods.libgcc.handle = NULL;
         break;
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_LIBUNWIND
     case WANDER_UNWIND_METHOD_LIBUNWIND:
         if (platform->methods.libunwind.handle)
-            dlclose(platform->methods.libunwind.handle);
+            wander_dlclose(platform->methods.libunwind.handle);
         platform->methods.libunwind.handle = NULL;
         break;
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_GNULIBC
     case WANDER_UNWIND_METHOD_GNULIBC:
         if (platform->methods.gnulibc.handle)
-            dlclose(platform->methods.gnulibc.handle);
+            wander_dlclose(platform->methods.gnulibc.handle);
         platform->methods.gnulibc.handle = NULL;
         break;
 #endif
@@ -161,7 +184,9 @@ WANDER_FUN(void) wander_platform_fini(wander_platform_t *platform)
 WANDER_FUN(wander_thread_id_t) wander_platform_thread_id(wander_platform_t *platform)
 {
     wander_thread_id_t thread_id = 0;
-#if WANDER_CONFIG_HAVE_PTHREAD_GETTHREADID_NP
+#if defined(_WIN32)
+    thread_id = GetCurrentThreadId();
+#elif WANDER_CONFIG_HAVE_PTHREAD_GETTHREADID_NP
     thread_id = pthread_getthreadid_np();
 #elif defined(__linux__)
     thread_id = syscall(__NR_gettid);
@@ -179,7 +204,7 @@ WANDER_FUN(wander_thread_id_t) wander_platform_thread_id(wander_platform_t *plat
 #elif defined(__DragonFly__)
     thread_id = lwp_gettid();
 #else
-    _Static_assert(sizeof(pthread_t) <= sizeof(wander_thread_id_t));
+    WANDER_STATIC_ASSERT(sizeof(pthread_t) <= sizeof(wander_thread_id_t));
     /* Best effort; Pray that it compiles */
     pthread_t current_thread = pthread_self();
     thread_id = current_thread;
@@ -245,6 +270,9 @@ WANDER_FUN(size_t) wander_platform_stackdepth(wander_platform_t *platform, size_
         }
 #endif
         break;
+    case WANDER_UNWIND_METHOD_DBGHELP:
+        /* TODO: It's probably possible to do this */
+        break;
     case WANDER_UNWIND_METHOD_GNULIBC:
         break;
     default:
@@ -260,6 +288,14 @@ WANDER_FUN(size_t) wander_platform_stackdepth(wander_platform_t *platform, size_
 WANDER_FUN(wander_backtrace_t) wander_platform_backtrace(wander_platform_t *platform, wander_backtrace_t backtrace)
 {
     switch (platform->method) {
+    case WANDER_UNWIND_METHOD_DBGHELP:
+#if WANDER_CONFIG_UNWIND_METHOD_DBGHELP
+        {
+            struct wander_method_dbghelp *method = &platform->methods.dbghelp;
+            backtrace.depth = method->CaptureStackBackTrace(0, backtrace.max_depth, backtrace.frames, NULL);
+        }
+#endif
+        break;
     case WANDER_UNWIND_METHOD_LIBGCC:
 #if WANDER_CONFIG_UNWIND_METHOD_LIBGCC
         {

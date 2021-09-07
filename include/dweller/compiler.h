@@ -48,7 +48,7 @@
         res_; \
     })
 #else
-static dw_unused dw_isnull_helper(void *ptr) { return ptr == NULL; }
+static dw_unused bool dw_isnull_helper(void *ptr) { return ptr == NULL; }
 #  define dw_isnull(x) dw_isnull_helper(x)
 #endif
 #  define DW_USE(x) \

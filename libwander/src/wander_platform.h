@@ -29,6 +29,28 @@
 #endif
 /****************************************************************************/
 
+/****************************************************************************/
+/* #includes for wander_dlopen()/wander_dlsym()/wander_dlclose() */
+#if defined(__unix__)
+# include <dlfcn.h> /* dlopen */
+typedef void *wander_libhandle_t;
+#define wander_dlopen(name) dlopen(name, RTLD_LAZY | RTLD_LOCAL)
+#define wander_dlopen_self() dlopen(NULL, RTLD_LAZY | RTLD_LOCAL)
+#define wander_dlsym(handle, sym) dlsym(handle, sym)
+#define wander_dlclose(handle) dlclose(handle)
+#elif defined(_WIN32)
+# include <winternl.h> /* RtlNtStatusToDosError */
+# include <libloaderapi.h> /* LoadLibraryA */
+typedef HMODULE wander_libhandle_t;
+#define wander_dlopen(name) LoadLibraryA(name)
+#define wander_dlopen_self() GetModuleHandleA(NULL)
+#define wander_dlsym(handle, sym) GetProcAddress(handle, sym)
+#define wander_dlclose(handle) FreeLibrary(handle)
+#else
+# error "Platform not (yet) supported"
+#endif
+/****************************************************************************/
+
 #define _XOPEN_SOURCE 700 /* siginfo_t */
 #include <signal.h>
 
@@ -50,6 +72,10 @@
 #  define WANDER_UNWIND_GETCONTEXT_IS_A_MACRO 0
 # endif
 #endif
+#if WANDER_CONFIG_UNWIND_METHOD_DBGHELP && defined(_WIN32)
+# include <windows.h>
+# include <dbghelp.h>
+#endif
 
 /* For WANDER_UNWIND_METHOD_NAIVE, the root frame must be initialized by wander_init itself */
 #if WANDER_CONFIG_UNWIND_METHOD_NAIVE
@@ -60,6 +86,7 @@
 
 typedef enum wander_method {
     WANDER_UNWIND_METHOD_NONE,
+    WANDER_UNWIND_METHOD_DBGHELP,
     WANDER_UNWIND_METHOD_LIBGCC,
     WANDER_UNWIND_METHOD_LIBUNWIND,
     WANDER_UNWIND_METHOD_LIBBACKTRACE,
@@ -71,16 +98,27 @@ typedef struct wander_platform wander_platform_t;
 struct wander_platform {
     wander_method_t method;
     union {
+#if WANDER_CONFIG_UNWIND_METHOD_DBGHELP && defined(_WIN32)
+        struct wander_method_dbghelp {
+            wander_libhandle_t handle;
+            USHORT (*CaptureStackBackTrace WINAPI)(
+                _In_      ULONG  FramesToSkip,
+                _In_      ULONG  FramesToCapture,
+                _Out_     PVOID  *BackTrace,
+                _Out_opt_ PULONG BackTraceHash
+            );
+        } dbghelp;
+#endif
 #if WANDER_CONFIG_UNWIND_METHOD_LIBGCC
         struct wander_method_libgcc {
-            void                 *handle;
+            wander_libhandle_t handle;
             _Unwind_Reason_Code (*_Unwind_Backtrace)(_Unwind_Trace_Fn trace, void *trace_arg);
             _Unwind_Word        (*_Unwind_GetIP)(struct _Unwind_Context *ctx);
         } libgcc;
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_LIBUNWIND
         struct wander_method_libunwind {
-            void *handle;
+            wander_libhandle_t handle;
 #if WANDER_UNWIND_GETCONTEXT_IS_A_MACRO == 0
             int (*unw_getcontext)(unw_context_t *ucp);
 #endif
@@ -91,7 +129,7 @@ struct wander_platform {
 #endif
 #if WANDER_CONFIG_UNWIND_METHOD_GNULIBC
         struct wander_method_gnulibc {
-            void *handle;
+            wander_libhandle_t handle;
             int (*backtrace)(void **buffer, int size);
         } gnulibc;
 #endif

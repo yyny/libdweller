@@ -4,13 +4,17 @@
 
 #include <assert.h>
 
-#include <link.h> /* dl_phdr_iterate */
-#include <sys/auxv.h> /* getauxval */
-#include <sys/mman.h> /* mmap */
-#include <sys/types.h>
-#include <sys/stat.h> /* struct stat */
-#include <fcntl.h> /* O_* */
-#include <unistd.h>
+#if defined(__unix__)
+# include <link.h> /* dl_phdr_iterate */
+# include <sys/auxv.h> /* getauxval */
+# include <sys/mman.h> /* mmap */
+# include <sys/types.h>
+# include <sys/stat.h> /* struct stat */
+# include <fcntl.h> /* O_* */
+# include <unistd.h>
+#elif defined(_WIN32)
+# include <windows.h>
+#endif
 
 #include <stdlib.h> /* malloc, free */
 #include <string.h> /* memset */
@@ -63,10 +67,19 @@ struct function {
 struct object_file {
     const char             *name;
     uint64_t                base;
-    int                     fd;
+    uint64_t                vaddr;
+    uint64_t                memsz;
     uint8_t                *data;
     size_t                  size;
+    bool                    is_exe;
+#if defined(__unix__)
+    int                     fd;
     const ElfW(Phdr)       *phdr;
+#else
+    HMODULE                 hModule;
+    HANDLE                  hFile;
+    HANDLE                  hFileMapping;
+#endif
     struct dwarf           *dwarf;
     struct dwarf_errinfo    errinfo;
 };
@@ -105,6 +118,7 @@ struct wander_resolver {
     void              (*free_fn)(void *ptr);
 };
 
+#if 0
 static inline void printstr(struct dwarf *dwarf, dw_str_t str)
 {
     dw_stream_t stream;
@@ -134,6 +148,7 @@ static inline void printstr(struct dwarf *dwarf, dw_str_t str)
     while (dw_stream_tell(&stream) < str.off + str.len)
         putchar(dw_stream_get8(&stream));
 }
+#endif
 static inline char *copy_dwarf_str(struct dwarf *dwarf, dw_str_t str, char **pptr, size_t *max_n)
 {
     dw_stream_t stream;
@@ -190,102 +205,6 @@ static void clear_function(struct function *fun)
     fun->high_pc = 0;
 }
 
-static int phdr_iterate_callback(struct dl_phdr_info *info, size_t size, void *ud)
-{
-    wander_resolver_t *resolver = (wander_resolver_t*)ud;
-
-    // TODO: Previously, this function returned -1 on error.
-    // However, this will stop the phdr iteration.
-    // Find some other way to signal errors
-
-    const char *soname = info->dlpi_name;
-    if (!soname || soname[0] == '\0') soname = (const char *)getauxval(AT_EXECFN);
-    if (!soname || soname[0] == '\0') soname = "/proc/self/exe";
-
-    for (size_t k = 0; k < info->dlpi_phnum; k++) {
-        const ElfW(Phdr) *phdr = &info->dlpi_phdr[k];
-        if (info->dlpi_name[0] == '\0') {
-            if (phdr->p_type == PT_DYNAMIC) {
-                const ElfW(Dyn) *dyn = (ElfW(Dyn) *)(phdr->p_vaddr + info->dlpi_addr);
-                for (; dyn->d_tag != DT_NULL; dyn++) {
-                    switch (dyn->d_tag) {
-                    case DT_INIT:
-                        resolver->init_addr = info->dlpi_addr + dyn->d_un.d_ptr;
-                        break;
-                    case DT_FINI:
-                        resolver->fini_addr = info->dlpi_addr + dyn->d_un.d_ptr;
-                        break;
-                    }
-                }
-            }
-        }
-        if (phdr->p_type != PT_LOAD) continue;
-        if ((phdr->p_flags & PF_X) == 0) continue;
-
-        struct object_file *object_file = NULL;
-        for (size_t i=0; i < resolver->num_object_files; i++) {
-            struct object_file *obj_file = &resolver->object_files[i];
-            if (strcmp(soname, obj_file->name) == 0) {
-                object_file = obj_file;
-            }
-        }
-        if (object_file == NULL) {
-            static struct stat sb;
-            if (resolver->num_object_files + 1 > resolver->max_object_files) {
-                if (resolver->max_object_files == 0) resolver->max_object_files = 1;
-                resolver->max_object_files *= 2;
-                resolver->object_files = realloc(resolver->object_files, resolver->max_object_files * sizeof(struct object_file));
-            }
-            object_file = &resolver->object_files[resolver->num_object_files++];
-            memset(object_file, 0x00, sizeof(struct object_file));
-            object_file->phdr = phdr;
-            object_file->base = info->dlpi_addr;
-            object_file->name = soname;
-            object_file->fd = -1;
-            if (resolver->debug_dir != -1) {
-                /* Some libraries are symlinked for backwards
-                 * compatability (notably libc)
-                 * Try to find the real location
-                 */
-                char *sopath = realpath(soname, NULL);
-                if (sopath != NULL) {
-                    size_t sopath_sz = strlen(sopath);
-                    /* Create a relative path to search for in debug_dir
-                     */
-                    sopath = realloc(sopath, sopath_sz + 3);
-                    if (!sopath) return 0; // TODO: Signal error
-                    memmove(sopath + 2, sopath, sopath_sz + 1);
-                    sopath[0] = '.';
-                    sopath[1] = '/';
-                    /* Find it in the debug directory */
-                    object_file->fd = openat(resolver->debug_dir, sopath, O_RDONLY);
-                    free(sopath);
-                }
-            }
-            if (object_file->fd == -1) {
-                /* Let's hope the library itself has debug symbols
-                 */
-                object_file->fd = open(soname, O_RDONLY);
-            }
-            if (object_file->fd == -1) return 0; // TODO: Signal error
-            if (fstat(object_file->fd, &sb) == -1) {
-                close(object_file->fd);
-                return 0; // TODO: Signal error
-            }
-            object_file->size = sb.st_size;
-            object_file->data = mmap(NULL, object_file->size, PROT_READ, MAP_SHARED, object_file->fd, 0);
-            if (object_file->data == MAP_FAILED) {
-                close(object_file->fd);
-                return 0; // TODO: Signal error
-            }
-            dwarf_init(&object_file->dwarf, &dweller_libc_allocator, &object_file->errinfo); // TODO: No allocation after initialization
-            object_file->dwarf->data = resolver;
-        }
-    }
-
-    return 0;
-}
-
 static enum dw_cb_status my_die_attr_cb(struct dwarf *dwarf, dwarf_unit_t *unit, dwarf_die_t *die, dwarf_attr_t *attr)
 {
     wander_resolver_t *resolver = dwarf->data;
@@ -324,7 +243,11 @@ static enum dw_cb_status my_die_attr_cb(struct dwarf *dwarf, dwarf_unit_t *unit,
             struct function *fun = &sym->fun;
             /* Check if our PC is within this function */
             if (data->have_low_pc && data->have_high_pc && sym->object_file) {
+#ifdef _WIN32 // FIXME: Probably misunderstanding something
+                uint64_t pc = (uint64_t)(sym->address);
+#else
                 uint64_t pc = (uint64_t)(sym->address - sym->object_file->base);
+#endif
                 bool good = pc > data->low_pc && pc <= data->high_pc; /* Bounds are OK */
                 bool better = !fun->found || (data->low_pc >= (uint64_t)fun->low_pc && data->high_pc <= fun->high_pc); /* Bounds are more specific (e.g. nested function) */
                 if (good && better) {
@@ -342,7 +265,7 @@ static enum dw_cb_status my_die_attr_cb(struct dwarf *dwarf, dwarf_unit_t *unit,
     case DW_AT_abstract_origin:
         {
             dw_i64_t off = unit->die.section_offset + attr->value.val;
-            // if (!dwarf_parse_die_at(dwarf, unit, &off, dwarf->errinfo)) return DW_CB_ERR;
+            // if (!dwarf_parse_die_at(dwarf, unit, &off, dwarf->errinfo)) return DW_CB_ERR; // TODO?
         }
         break;
     case DW_AT_name:
@@ -434,7 +357,11 @@ static enum dw_cb_status my_line_row_cb(struct dwarf *dwarf, struct dwarf_line_p
         if (fun->found_location) continue;
         if (sym->object_file != resolver->current_object_file) continue;
         if (!fun->have_line_offset || program->section_offset != fun->line_offset) continue;
+#if _WIN32
+        uintptr_t addr = (uintptr_t)(sym->address);
+#else
         uintptr_t addr = (uintptr_t)(sym->address - sym->object_file->base);
+#endif
         if (addr >= last_state->address && addr <= state->address) {
             /* Since a `call` instruction pushes the address AFTER the call, we must check last_state to get the correct line-number */
             if (last_state->file == 0) continue;
@@ -494,7 +421,13 @@ static enum dw_cb_status my_arange_cb(struct dwarf *dwarf, dwarf_aranges_t *aran
     for (size_t i=0; i < resolver->num_stack_frames; i++) {
         uintptr_t retaddr = (uintptr_t)resolver->symbols[i].address;
         struct function *fun = &resolver->symbols[i].fun;
+        // FIXME: It seems we don't need resolver->current_object_file->base on Win32? Perhaps we should detect if executable is relocatable?
+        // Or do some tests on non-relocatable executables on unix
+#if _WIN32
+        if (retaddr > arange->base && retaddr <= arange->base + arange->size) {
+#else
         if (retaddr > resolver->current_object_file->base + arange->base && retaddr <= resolver->current_object_file->base + arange->base + arange->size) {
+#endif
             fun->info_offset = aranges->debug_info_offset;
             fun->have_info_offset = true;
         }
@@ -502,19 +435,120 @@ static enum dw_cb_status my_arange_cb(struct dwarf *dwarf, dwarf_aranges_t *aran
     return DW_CB_OK;
 }
 
-/**
- * Create a new symbol resolver capable of resolving symbols for at least `max_depth` frames and `max_locations` locations.
- */
-WANDER_FUN(wander_resolver_t*) wander_resolver_create(size_t max_depth, size_t max_locations)
+static struct object_file *alloc_object_file(wander_resolver_t *resolver)
 {
-    wander_resolver_t *resolver = malloc(sizeof(wander_resolver_t));
-    memset(resolver, 0x00, sizeof(wander_resolver_t));
-    resolver->max_depth = max_depth;
-    resolver->max_locations = max_locations;
-    resolver->free_fn = free;
-    resolver->backtrace = NULL;
-    resolver->debug_dir = open("/usr/lib/debug/", O_RDONLY);
-    resolver->symbols = malloc(max_depth * sizeof(struct symbol));
+    if (resolver->num_object_files + 1 > resolver->max_object_files) {
+        if (resolver->max_object_files == 0) resolver->max_object_files = 1;
+        resolver->max_object_files *= 2;
+        resolver->object_files = realloc(resolver->object_files, resolver->max_object_files * sizeof(struct object_file));
+    }
+    return &resolver->object_files[resolver->num_object_files++];
+}
+
+static void load_section(struct object_file *object_file, const char *name, struct dwarf_section section)
+{
+    if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_ABBREV, section, &object_file->errinfo);
+    else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_ARANGES, section, &object_file->errinfo);
+    else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_INFO, section, &object_file->errinfo);
+    else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_LINE, section, &object_file->errinfo);
+    else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_STR, section, &object_file->errinfo);
+}
+
+#if defined(__unix__)
+static int phdr_iterate_callback(struct dl_phdr_info *info, size_t size, void *ud)
+{
+    wander_resolver_t *resolver = (wander_resolver_t*)ud;
+
+    // TODO: Previously, this function returned -1 on error.
+    // However, this will stop the phdr iteration.
+    // Find some other way to signal errors
+
+    const char *soname = info->dlpi_name;
+    if (!soname || soname[0] == '\0') soname = (const char *)getauxval(AT_EXECFN);
+    if (!soname || soname[0] == '\0') soname = "/proc/self/exe";
+
+    for (size_t k = 0; k < info->dlpi_phnum; k++) {
+        const ElfW(Phdr) *phdr = &info->dlpi_phdr[k];
+        if (info->dlpi_name[0] == '\0') {
+            if (phdr->p_type == PT_DYNAMIC) {
+                const ElfW(Dyn) *dyn = (ElfW(Dyn) *)(phdr->p_vaddr + info->dlpi_addr);
+                for (; dyn->d_tag != DT_NULL; dyn++) {
+                    switch (dyn->d_tag) {
+                    case DT_INIT:
+                        resolver->init_addr = info->dlpi_addr + dyn->d_un.d_ptr;
+                        break;
+                    case DT_FINI:
+                        resolver->fini_addr = info->dlpi_addr + dyn->d_un.d_ptr;
+                        break;
+                    }
+                }
+            }
+        }
+        if (phdr->p_type != PT_LOAD) continue;
+        if ((phdr->p_flags & PF_X) == 0) continue;
+
+        struct object_file *object_file = NULL;
+        for (size_t i=0; i < resolver->num_object_files; i++) {
+            struct object_file *obj_file = &resolver->object_files[i];
+            if (strcmp(soname, obj_file->name) == 0) {
+                object_file = obj_file;
+            }
+        }
+        if (object_file == NULL) {
+            static struct stat sb;
+            object_file = alloc_object_file(resolver);
+            memset(object_file, 0x00, sizeof(struct object_file));
+            object_file->phdr = phdr;
+            object_file->base = info->dlpi_addr;
+            object_file->vaddr = phdr->p_vaddr;
+            object_file->memsz = phdr->p_memsz;
+            object_file->name = soname;
+            object_file->is_exe = (k == 0);
+            object_file->fd = -1;
+            if (resolver->debug_dir != -1) {
+                /* Some libraries are symlinked for backwards
+                 * compatability (notably libc)
+                 * Try to find the real location
+                 */
+                char *sopath = realpath(soname, NULL);
+                if (sopath != NULL) {
+                    size_t sopath_sz = strlen(sopath);
+                    /* Create a relative path to search for in debug_dir
+                     */
+                    sopath = realloc(sopath, sopath_sz + 3);
+                    if (!sopath) return 0; // TODO: Signal error
+                    memmove(sopath + 2, sopath, sopath_sz + 1);
+                    sopath[0] = '.';
+                    sopath[1] = '/';
+                    /* Find it in the debug directory */
+                    object_file->fd = openat(resolver->debug_dir, sopath, O_RDONLY);
+                    free(sopath);
+                }
+            }
+            if (object_file->fd == -1) {
+                /* Let's hope the library itself has debug symbols
+                 */
+                object_file->fd = open(soname, O_RDONLY);
+            }
+            if (object_file->fd == -1) return 0; // TODO: Signal error
+            if (fstat(object_file->fd, &sb) == -1) {
+                close(object_file->fd);
+                return 0; // TODO: Signal error
+            }
+            object_file->size = sb.st_size;
+            object_file->data = mmap(NULL, object_file->size, PROT_READ, MAP_SHARED, object_file->fd, 0);
+            if (object_file->data == MAP_FAILED) {
+                close(object_file->fd);
+                return 0; // TODO: Signal error
+            }
+            finish_setup(resolver, object_file);
+        }
+    }
+
+    return 0;
+}
+static void load_object_files(wander_resolver_t *resolver)
+{
     dl_iterate_phdr(phdr_iterate_callback, resolver);
     if (wander_global.platform.sym_restore == NULL && wander_global.platform.sym_restore_rt == NULL) {
         for (size_t i=0; i < resolver->num_object_files; i++) {
@@ -552,94 +586,168 @@ WANDER_FUN(wander_resolver_t*) wander_resolver_create(size_t max_depth, size_t m
             }
         }
     }
-    return resolver;
 }
-WANDER_FUN(int) wander_resolver_load(wander_resolver_t *resolver, wander_backtrace_t *backtrace)
+static void load_debug_sections(wander_resolver_t *resolver, struct object_file *object_file)
 {
-    resolver->backtrace = backtrace;
-    resolver->num_stack_frames = backtrace->depth;
-    for (size_t i=0; i < resolver->num_stack_frames; i++) {
-        struct symbol *sym = &resolver->symbols[i];
-        memset(sym, 0x00, sizeof(struct symbol));
-        sym->address = backtrace->frames[i];
-        struct function *fun = &resolver->symbols[i].fun;
-        clear_function(fun);
-        for (size_t k = 0; k < resolver->num_object_files; k++) {
-            struct object_file *object_file = &resolver->object_files[k];
-            void *retaddr = sym->address;
-            if (retaddr >= (void *)object_file->base + object_file->phdr->p_vaddr && retaddr < (void *)object_file->base + object_file->phdr->p_vaddr + object_file->phdr->p_memsz) {
-                sym->object_file = object_file;
-                break;
-            }
-        }
-        if (sym->address == resolver->init_addr) {
-            fun->symname = "_init";
-            fun->symaddr = sym->address;
-            fun->symsize = 0;
-        }
-        if (sym->address == resolver->fini_addr) {
-            fun->symname = "_fini";
-            fun->symaddr = sym->address;
-            fun->symsize = 0;
-        }
-        if (sym->address == resolver->start_addr) {
-            fun->symname = "_start";
-            fun->symaddr = sym->address;
-            fun->symsize = 0;
-        }
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)object_file->data;
+    Elf64_Shdr *shstrh = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
+    char *shstrs = (char *)(object_file->data + shstrh->sh_offset);
+    Elf64_Shdr *shdrs = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff);
+    if (i == 0) {
+        resolver->start_addr = object_file->base + ehdr->e_entry;
     }
+    for (size_t j=0; j < ehdr->e_shnum; j++) {
+        assert(sizeof(Elf64_Shdr) == ehdr->e_shentsize);
+        Elf64_Shdr *shdr = &shdrs[j];
+        switch (shdr->sh_type) {
+        case SHT_SYMTAB:
+            {
+                Elf64_Shdr *symtab = shdr;
+                Elf64_Shdr *strh = &shdrs[symtab->sh_link];
+                char *strs = (char *)(object_file->data + strh->sh_offset);
+                Elf64_Sym *sym = (Elf64_Sym *)(object_file->data + symtab->sh_offset);
+                size_t size = symtab->sh_size;
+                while (size > sizeof(Elf64_Sym)) {
+                    for (size_t k=0; k < resolver->num_stack_frames; k++) {
+                        struct symbol *funsym = &resolver->symbols[k];
+                        struct function *fun = &funsym->fun;
+                        if (fun->found && fun->name.section != DWARF_SECTION_UNKNOWN) continue;
+                        bool is_same = funsym->address == (void *)(object_file->base + sym->st_value);
+                        bool in_range = funsym->address >= (void *)(object_file->base + sym->st_value)
+                                     && funsym->address < (void *)(object_file->base + sym->st_value + sym->st_size);
+                        if (is_same || in_range) {
+                            fun->symname = &strs[sym->st_name];
+                            fun->symaddr = (void *)(object_file->base + sym->st_value);
+                            fun->symsize = sym->st_size;
+                        }
+                    }
+                    sym++;
+                    size -= sizeof(Elf64_Sym);
+                }
+            }
+            break;
+        }
+        char *name = &shstrs[shdr->sh_name];
+        struct dwarf_section section;
+        section.base = object_file->data + shdr->sh_offset;
+        section.size = shdr->sh_size;
+        load_section(object_file, name, section);
+    }
+}
+#elif defined(_WIN32)
+HMODULE GetCurrentModule() {
+    HMODULE hModule = NULL;
+    GetModuleHandleEx(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        (LPCTSTR)GetCurrentModule,
+        &hModule);
+    return hModule;
+}
+char *GetModuleName(HMODULE hModule) {
+    size_t size = MAX_PATH;
+    char *result = NULL;
+    size_t offset = 0;
+    for (;;) {
+        result = realloc(result, size);
+        offset = GetModuleFileNameA(hModule, result + offset, size);
+        if (offset < size) {
+            if (offset == 0)
+                return NULL;
+            break;
+        }
+        size *= 2;
+    }
+    return result;
+}
+
+static bool open_object_file(struct object_file *object_file, const char *path)
+{
+    SECURITY_ATTRIBUTES secAttrs;
+    secAttrs.nLength = sizeof(SECURITY_ATTRIBUTES);
+    secAttrs.lpSecurityDescriptor = NULL;
+    secAttrs.bInheritHandle = TRUE;
+    object_file->hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, &secAttrs, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (object_file->hFile == INVALID_HANDLE_VALUE)
+        return false;
+    ULARGE_INTEGER fileSize;
+    fileSize.LowPart = GetFileSize(object_file->hFile, &fileSize.HighPart);
+    object_file->size = fileSize.QuadPart;
+    object_file->hFileMapping = CreateFileMappingA(object_file->hFile, &secAttrs, PAGE_READONLY, 0, 0, NULL);
+    if (!object_file->hFileMapping)
+        return false;
+    object_file->data = MapViewOfFile(object_file->hFileMapping, FILE_MAP_READ, 0, 0, object_file->size);
+    return true;
+}
+static void load_object_files(wander_resolver_t *resolver)
+{
+    // TODO: Use `EnumProcessModules`
+    HMODULE hCurrentModule = GetModuleHandle(NULL);
+    char *currentModuleName = GetModuleName(hCurrentModule);
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hCurrentModule;
+    PIMAGE_NT_HEADERS pe = (PCHAR)dos + dos->e_lfanew;
+    PIMAGE_FILE_HEADER fh = &pe->FileHeader;
+    PIMAGE_OPTIONAL_HEADER oh = &pe->OptionalHeader;
+#if 0
+    printf("Machine:              %x\n", fh->Machine);
+    printf("NumberOfSections:     %u\n", fh->NumberOfSections);
+    printf("TimeDateStamp:        %u\n", fh->TimeDateStamp);
+    printf("PointerToSymbolTable: %p\n", fh->PointerToSymbolTable);
+    printf("NumberOfSymbols:      %u\n", fh->NumberOfSymbols);
+    printf("SizeOfOptionalHeader: %u\n", fh->SizeOfOptionalHeader);
+    printf("Characteristics:      %x\n", fh->Characteristics);
+#endif
+    struct object_file *object_file = alloc_object_file(resolver);
+    object_file->hModule = hCurrentModule;
+    if (!open_object_file(object_file, currentModuleName)) {
+        // TODO: Error?
+    }
+    object_file->base = hCurrentModule;
+    object_file->vaddr = oh->BaseOfCode;
+    object_file->memsz = oh->SizeOfCode;
+    object_file->name = currentModuleName; // FIXME: Memory leak
+    object_file->is_exe = true;
+}
+static void load_debug_sections(wander_resolver_t *resolver, struct object_file *object_file)
+{
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)object_file->hModule;
+    PIMAGE_NT_HEADERS pe = (PCHAR)dos + dos->e_lfanew;
+    PIMAGE_FILE_HEADER fh = &pe->FileHeader;
+    PIMAGE_OPTIONAL_HEADER oh = &pe->OptionalHeader;
+    PIMAGE_SECTION_HEADER shs = (PIMAGE_SECTION_HEADER)((char*)(fh + 1) + fh->SizeOfOptionalHeader);
+    IMAGE_SYMBOL *symtab = (char*)object_file->data + fh->PointerToSymbolTable;
+    char *strtab = (char *)(symtab + fh->NumberOfSymbols);
+    for (int i=0; i < fh->NumberOfSections; i++) {
+        PIMAGE_SECTION_HEADER sh = &shs[i];
+        char *name = sh->Name;
+        if (sh->Name[0] == '/') {
+            size_t off = 0;
+            size_t j=0;
+            while (isdigit(sh->Name[++j])) {
+                off *= 10;
+                off += sh->Name[j] - '0';
+            }
+            name = strtab + off;
+        }
+        struct dwarf_section section;
+        section.base = object_file->data + sh->PointerToRawData;
+        // section.size = sh->SizeOfRawData;
+        section.size = sh->Misc.VirtualSize < sh->SizeOfRawData ? sh->Misc.VirtualSize : sh->SizeOfRawData;
+        load_section(object_file, name, section);
+    }
+}
+#else
+# error "Platform not (yet) supported"
+#endif
+
+static void parse_object_files(wander_resolver_t *resolver)
+{
     for (size_t i=0; i < resolver->num_object_files; i++) {
         struct object_file *object_file = &resolver->object_files[i];
-        Elf64_Ehdr *ehdr = (Elf64_Ehdr *)object_file->data;
-        if (ehdr == NULL) continue; /* object file is not mapped */
+        if (object_file->data == NULL) continue; /* object file is not mapped */
         resolver->current_object_file = object_file;
-        if (i == 0) {
-            resolver->start_addr = object_file->base + ehdr->e_entry;
-        }
-        Elf64_Shdr *shstrh = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
-        char *shstrs = (char *)(object_file->data + shstrh->sh_offset);
-        Elf64_Shdr *shdrs = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff);
-        for (size_t j=0; j < ehdr->e_shnum; j++) {
-            assert(sizeof(Elf64_Shdr) == ehdr->e_shentsize);
-            Elf64_Shdr *shdr = &shdrs[j];
-            switch (shdr->sh_type) {
-            case SHT_SYMTAB:
-                {
-                    Elf64_Shdr *symtab = shdr;
-                    Elf64_Shdr *strh = &shdrs[symtab->sh_link];
-                    char *strs = (char *)(object_file->data + strh->sh_offset);
-                    Elf64_Sym *sym = (Elf64_Sym *)(object_file->data + symtab->sh_offset);
-                    size_t size = symtab->sh_size;
-                    while (size > sizeof(Elf64_Sym)) {
-                        for (size_t k=0; k < resolver->num_stack_frames; k++) {
-                            struct symbol *funsym = &resolver->symbols[k];
-                            struct function *fun = &funsym->fun;
-                            if (fun->found && fun->name.section != DWARF_SECTION_UNKNOWN) continue;
-                            bool is_same = funsym->address == (void *)(object_file->base + sym->st_value);
-                            bool in_range = funsym->address >= (void *)(object_file->base + sym->st_value)
-                                         && funsym->address < (void *)(object_file->base + sym->st_value + sym->st_size);
-                            if (is_same || in_range) {
-                                fun->symname = &strs[sym->st_name];
-                                fun->symaddr = (void *)(object_file->base + sym->st_value);
-                                fun->symsize = sym->st_size;
-                            }
-                        }
-                        sym++;
-                        size -= sizeof(Elf64_Sym);
-                    }
-                }
-                break;
-            }
-            char *name = &shstrs[shdr->sh_name];
-            struct dwarf_section section;
-            section.base = object_file->data + shdr->sh_offset;
-            section.size = shdr->sh_size;
-            if      (strcmp(name, ".debug_abbrev") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_ABBREV, section, &object_file->errinfo);
-            else if (strcmp(name, ".debug_aranges") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_ARANGES, section, &object_file->errinfo);
-            else if (strcmp(name, ".debug_info") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_INFO, section, &object_file->errinfo);
-            else if (strcmp(name, ".debug_line") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_LINE, section, &object_file->errinfo);
-            else if (strcmp(name, ".debug_str") == 0) dwarf_load_section(object_file->dwarf, DWARF_SECTION_STR, section, &object_file->errinfo);
-        }
+        dwarf_init(&object_file->dwarf, &dweller_libc_allocator, &object_file->errinfo); // TODO: No allocation after initialization
+        object_file->dwarf->data = resolver;
+        load_debug_sections(resolver, object_file);
         object_file->dwarf->arange_cb = my_arange_cb;
         object_file->dwarf->line_cb = my_line_cb;
         object_file->dwarf->cu_cb = my_cu_cb;
@@ -684,6 +792,63 @@ WANDER_FUN(int) wander_resolver_load(wander_resolver_t *resolver, wander_backtra
     printf("\n-----------------------------------------------------------\n");
     fflush(stdout);
 #endif
+}
+
+/**
+ * Create a new symbol resolver capable of resolving symbols for at least `max_depth` frames and `max_locations` locations.
+ */
+WANDER_FUN(wander_resolver_t*) wander_resolver_create(size_t max_depth, size_t max_locations)
+{
+    wander_resolver_t *resolver = malloc(sizeof(wander_resolver_t));
+    memset(resolver, 0x00, sizeof(wander_resolver_t));
+    resolver->max_depth = max_depth;
+    resolver->max_locations = max_locations;
+    resolver->free_fn = free;
+    resolver->backtrace = NULL;
+    resolver->symbols = malloc(max_depth * sizeof(struct symbol));
+#if defined(__unix__)
+    resolver->debug_dir = open("/usr/lib/debug/", O_RDONLY);
+#else
+    resolver->debug_dir = -1;
+#endif
+    load_object_files(resolver);
+    return resolver;
+}
+WANDER_FUN(int) wander_resolver_load(wander_resolver_t *resolver, wander_backtrace_t *backtrace)
+{
+    resolver->backtrace = backtrace;
+    resolver->num_stack_frames = backtrace->depth;
+    for (size_t i=0; i < resolver->num_stack_frames; i++) {
+        struct symbol *sym = &resolver->symbols[i];
+        memset(sym, 0x00, sizeof(struct symbol));
+        sym->address = backtrace->frames[i];
+        struct function *fun = &resolver->symbols[i].fun;
+        clear_function(fun);
+        for (size_t k = 0; k < resolver->num_object_files; k++) {
+            struct object_file *object_file = &resolver->object_files[k];
+            void *retaddr = sym->address;
+            if (retaddr >= (void *)object_file->base + object_file->vaddr && retaddr < (void *)object_file->base + object_file->vaddr + object_file->memsz) {
+                sym->object_file = object_file;
+                break;
+            }
+        }
+        if (sym->address == resolver->init_addr) {
+            fun->symname = "_init";
+            fun->symaddr = sym->address;
+            fun->symsize = 0;
+        }
+        if (sym->address == resolver->fini_addr) {
+            fun->symname = "_fini";
+            fun->symaddr = sym->address;
+            fun->symsize = 0;
+        }
+        if (sym->address == resolver->start_addr) {
+            fun->symname = "_start";
+            fun->symaddr = sym->address;
+            fun->symsize = 0;
+        }
+    }
+    parse_object_files(resolver);
     return 0;
 }
 WANDER_FUN(void) wander_resolver_free(wander_resolver_t **resolver)
@@ -738,11 +903,13 @@ WANDER_FUN(wander_resolution_t*) wander_resolve_frame_safe(wander_resolver_t *re
         struct function fun = sym->fun;
         struct object_file *object_file = sym->object_file;
         struct dwarf *dwarf = NULL;
-        if (object_file != NULL) dwarf = object_file->dwarf;
+        if (object_file != NULL) {
+            dwarf = object_file->dwarf;
+            resolution->object = object_file->name;
+            resolution->object_base = object_file->base;
+        }
         char *ptr = resolver->buffer;
         size_t max_n = sizeof(resolver->buffer);
-        resolution->object = object_file->name;
-        resolution->object_base = object_file->base;
         if (fun.decl_line != -1) {
             resolution->source.lineno = fun.decl_line;
         }

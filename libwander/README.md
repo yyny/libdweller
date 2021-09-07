@@ -1,6 +1,6 @@
 `libwander` is a simple stack unwinding library capable of producing AS-safe backtraces.
 `libwander` can currently only resolve debug info using `libdweller`,
-although support for `libdwarf`, `libdw` and possibly others might at some point be added aswell.
+although support for `libdwarf`, `libdw` and possibly others (like microsoft's "Symbol Server"s) might at some point be added aswell.
 
 For an example, see `./examples/01_stacktrace.c`.
 An example output produced by `libwander`:
@@ -31,6 +31,7 @@ Segmentation fault
 
 `libwander` will try several method for obtaining unwinding information:
 
+ * `WANDER_UNWIND_METHOD_DBGHELP` (win32)
  * `WANDER_UNWIND_METHOD_LIBGCC`
  * `WANDER_UNWIND_METHOD_LIBUNWIND`
  * `WANDER_UNWIND_METHOD_LIBBACKTRACE`
@@ -42,6 +43,15 @@ support for that method will not be compiled in to the library.
 
 `libwander` will try these methods in the order they are declared.
 Next follows an explanation for these methods and their order.
+
+## `WANDER_UNWIND_METHOD_DBGHELP` (win32)
+
+On `win32`, this method uses the `CaptureStackBackTrace` function declared in `dbghelp.h`,
+included with `DbgHelp.lib`.
+The `win32` platform has no concept of AS-safety,
+although the `WANDER_UNWIND_METHOD_DBGHELP` method can generally be considered AS-safe.
+Because this is the recommended API for capturing backtraces on `win32`,
+this method is always tried first when available.
 
 ## `WANDER_UNWIND_METHOD_LIBGCC`
 

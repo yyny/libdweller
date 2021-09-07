@@ -25,3 +25,17 @@
 
 #define cast(T, e) ((T)(e))
 
+#ifdef __GNUC__
+static inline int find_first_bit_set(dw_u8_t byte)
+{
+    return __builtin_ffs(byte);
+}
+#else
+static inline int find_first_bit_set(dw_u8_t byte)
+{
+    int index = 0;
+    if (byte)
+        while ((byte & (1 << index++)) == 0);
+    return index;
+}
+#endif

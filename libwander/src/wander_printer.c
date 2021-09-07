@@ -151,6 +151,10 @@ WANDER_FUN(wander_printer_t) wander_safe_printer(wander_writer_t writer, int ist
  */
 WANDER_FUN(int) wander_print(wander_printer_t *printer, wander_backtrace_t *backtrace)
 {
+    if (backtrace->depth == 0) {
+        wander_printer_writestr(printer, "Failed to obtain a stack trace!\n");
+        return -1;
+    }
     wander_resolver_load(wander_global.resolver, backtrace);
     wander_printer_writestr(printer, "Stack trace (most recent call last):\n");
     size_t max_len = wander_log10(backtrace->depth);

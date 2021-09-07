@@ -28,8 +28,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h> /* ffs */
 
+// FIXME: Seperate these into seperate build files
 #include "dwarf_symbols.c"
 #include "dwarf_abbrev.c"
 #include "dwarf_aranges.c"

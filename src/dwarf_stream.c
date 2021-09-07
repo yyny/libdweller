@@ -28,7 +28,7 @@ dw_leb128_parse_unsigned(uint8_t *data, size_t size, int *shift_out)
         result |= (dw_u64_t)(byte & 0x7f) << shift;
         if ((byte & 0x80) == 0)
             break;
-        if (shift > 64 || shift + ffs(byte) > 64)
+        if (shift > 64 || shift + find_first_bit_set(byte) > 64)
             goto fail;
         shift += 7;
     }
@@ -51,7 +51,7 @@ dw_leb128_parse_signed(uint8_t *data, size_t size, int *shift_out)
     do {
         byte = data[i++];
         result |= (dw_u64_t)(byte & 0x7f) << shift;
-        if (shift > 64 || shift + ffs(byte) > 64)
+        if (shift > 64 || shift + find_first_bit_set(byte) > 64)
             goto fail;
         shift += 7;
     } while ((byte & 0x80) != 0);
@@ -306,7 +306,7 @@ dw_stream_getleb128_unsigned(dw_stream_t *stream, int *shift_out)
         result |= (byte & 0x7f) << shift;
         if ((byte & 0x80) == 0)
             break;
-        if (shift > 64 || shift + ffs(byte) > 64)
+        if (shift > 64 || shift + find_first_bit_set(byte) > 64)
             goto fail;
         shift += 7;
     }
@@ -329,7 +329,7 @@ dw_stream_getleb128_signed(dw_stream_t *stream, int *shift_out)
     do {
         byte = dw_stream_get8(stream);
         result |= (byte & 0x7f) << shift;
-        if (shift > 64 || shift + ffs(byte) > 64)
+        if (shift > 64 || shift + find_first_bit_set(byte) > 64)
             goto fail;
         shift += 7;
     } while ((byte & 0x80) != 0);

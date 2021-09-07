@@ -12,10 +12,12 @@
 
 WANDER_VAR(struct wander_global) wander_global;
 
+#if defined(__unix__)
 static void wander_sigaction_handler(int signo, siginfo_t *info, void *ucontext)
 {
     wander_handle_sigaction(signo, info, ucontext);
 }
+#endif
 
 WANDER_FUN(int) wander_init(void)
 {
@@ -44,11 +46,13 @@ WANDER_FUN(void) wander_handle_signal(int signo)
 WANDER_FUN(void) wander_handle_sigaction(int signo, void *info, void *ucontext)
 {
     void *buffer[WANDER_CONFIG_MAX_STACK_DEPTH];
-    ucontext_t *uctx = (ucontext_t *)(ucontext);
     void *error_addr = NULL;
 
+#if defined(__unix__)
+    ucontext_t *uctx = (ucontext_t *)(ucontext);
+
     if (uctx) {
-#ifdef REG_RIP /* x86_64 */
+#if defined(REG_RIP) /* x86_64 */
         error_addr = (void *)(uctx->uc_mcontext.gregs[REG_RIP]);
 #elif defined(REG_EIP) /* x86_32 */
         error_addr = (void *)(uctx->uc_mcontext.gregs[REG_EIP]);
@@ -70,6 +74,7 @@ WANDER_FUN(void) wander_handle_sigaction(int signo, void *info, void *ucontext)
         error_addr = NULL;
 #endif
     }
+#endif
     wander_backtrace_t backtrace = wander_backtrace_safe(buffer, WANDER_CONFIG_MAX_STACK_DEPTH);
 #if 1
     /* Skip all the signal frames */
@@ -88,9 +93,10 @@ WANDER_FUN(void) wander_handle_sigaction(int signo, void *info, void *ucontext)
 #endif
 print_backtrace:
     wander_print(&wander_default_safe_printer, &backtrace);
+#if defined(__unix__)
     if (info) {
 #if _XOPEN_SOURCE >= 700 || _POSIX_C_SOURCE >= 200809L
-        psiginfo(info, NULL);
+        psiginfo(info, NULL); // FIXME: Uses printf, not AS-safe.
 #elif defined(REG_ERR)
         siginfo_t *siginfo = info;
         if (signo == SIGSEGV || signo == SIGBUS) {
@@ -109,8 +115,73 @@ print_backtrace:
         }
 #endif
     }
+#endif
     wander_backtrace_free(&backtrace);
 }
+#if defined(_WIN32)
+static const char* ExceptionCodeToString(DWORD dExceptionCode)
+{
+    switch(dExceptionCode) {
+    case EXCEPTION_ACCESS_VIOLATION:         return "EXCEPTION_ACCESS_VIOLATION"         ;
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:    return "EXCEPTION_ARRAY_BOUNDS_EXCEEDED"    ;
+    case EXCEPTION_BREAKPOINT:               return "EXCEPTION_BREAKPOINT"               ;
+    case EXCEPTION_DATATYPE_MISALIGNMENT:    return "EXCEPTION_DATATYPE_MISALIGNMENT"    ;
+    case EXCEPTION_FLT_DENORMAL_OPERAND:     return "EXCEPTION_FLT_DENORMAL_OPERAND"     ;
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:       return "EXCEPTION_FLT_DIVIDE_BY_ZERO"       ;
+    case EXCEPTION_FLT_INEXACT_RESULT:       return "EXCEPTION_FLT_INEXACT_RESULT"       ;
+    case EXCEPTION_FLT_INVALID_OPERATION:    return "EXCEPTION_FLT_INVALID_OPERATION"    ;
+    case EXCEPTION_FLT_OVERFLOW:             return "EXCEPTION_FLT_OVERFLOW"             ;
+    case EXCEPTION_FLT_STACK_CHECK:          return "EXCEPTION_FLT_STACK_CHECK"          ;
+    case EXCEPTION_FLT_UNDERFLOW:            return "EXCEPTION_FLT_UNDERFLOW"            ;
+    case EXCEPTION_ILLEGAL_INSTRUCTION:      return "EXCEPTION_ILLEGAL_INSTRUCTION"      ;
+    case EXCEPTION_IN_PAGE_ERROR:            return "EXCEPTION_IN_PAGE_ERROR"            ;
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:       return "EXCEPTION_INT_DIVIDE_BY_ZERO"       ;
+    case EXCEPTION_INT_OVERFLOW:             return "EXCEPTION_INT_OVERFLOW"             ;
+    case EXCEPTION_INVALID_DISPOSITION:      return "EXCEPTION_INVALID_DISPOSITION"      ;
+    case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "EXCEPTION_NONCONTINUABLE_EXCEPTION" ;
+    case EXCEPTION_PRIV_INSTRUCTION:         return "EXCEPTION_PRIV_INSTRUCTION"         ;
+    case EXCEPTION_SINGLE_STEP:              return "EXCEPTION_SINGLE_STEP"              ;
+    case EXCEPTION_STACK_OVERFLOW:           return "EXCEPTION_STACK_OVERFLOW"           ;
+    default: return "UNKNOWN EXCEPTION" ;
+    }
+}
+
+static WINAPI LONG wander_handle_win32_se(LPEXCEPTION_POINTERS ExceptionInfo)
+{
+    void *buffer[WANDER_CONFIG_MAX_STACK_DEPTH];
+    void *error_addr = NULL;
+
+    error_addr = ExceptionInfo->ContextRecord->Rip;
+
+    wander_backtrace_t backtrace = wander_backtrace_safe(buffer, WANDER_CONFIG_MAX_STACK_DEPTH);
+#if 1
+    /* Skip all the SEH frames */
+    if (wander_backtrace_rebase(&backtrace, error_addr) != NULL) goto print_backtrace;
+#endif
+
+print_backtrace:
+    wander_print(&wander_default_safe_printer, &backtrace);
+    wander_libhandle_t hNtDll = wander_dlopen("NTDLL.DLL");
+    ULONG (*pRtlNtStatusToDosError)(NTSTATUS status) = GetProcAddress(hNtDll, "RtlNtStatusToDosError");
+    if (pRtlNtStatusToDosError != NULL) {
+        LPTSTR message;
+        DWORD dwRes = FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM,
+            hNtDll, (*pRtlNtStatusToDosError)(ExceptionInfo->ExceptionRecord->ExceptionCode), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPTSTR)&message, 0, NULL
+        );
+        wander_writestr(&wander_default_safe_printer.writer, ExceptionCodeToString(ExceptionInfo->ExceptionRecord->ExceptionCode));
+        wander_writestr(&wander_default_safe_printer.writer, " (");
+        wander_writehex(&wander_default_safe_printer.writer, ExceptionInfo->ExceptionRecord->ExceptionCode);
+        wander_writestr(&wander_default_safe_printer.writer, "): ");
+        wander_writestr(&wander_default_safe_printer.writer, message);
+        LocalFree(message);
+    }
+    wander_dlclose(hNtDll);
+
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 /*
  * The first handlers installed with this function will be automatically uninstalled by `wander_fini`.
  * Subsequent handlers have to be uninstalled manually.
@@ -119,8 +190,9 @@ WANDER_FUN(wander_handlers_t*) wander_install_handlers(const int signals[])
 {
     static const int posix_signals[] = { /* Signals for which the default action is "Core". */
         SIGABRT, /* Abort signal from abort(3)        */
-        SIGBUS,  /* Bus error (bad memory access)     */
         SIGFPE,  /* Floating point exception          */
+#if defined(__unix__)
+        SIGBUS,  /* Bus error (bad memory access)     */
         SIGILL,  /* Illegal Instruction               */
         SIGIOT,  /* IOT trap. A synonym for SIGABRT   */
         SIGQUIT, /* Quit from keyboard                */
@@ -132,6 +204,7 @@ WANDER_FUN(wander_handlers_t*) wander_install_handlers(const int signals[])
 #if 0
         SIGEMT,  /* Emulation instruction executed    */
 #endif
+#endif
         0,
     };
     size_t num_handlers = 0;
@@ -141,8 +214,10 @@ WANDER_FUN(wander_handlers_t*) wander_install_handlers(const int signals[])
     handlers->num_handlers = num_handlers;
     for (size_t i=0; i < num_handlers; i++) {
         int signo = signals[i];
-        struct sigaction action;
         handlers->handlers[i].signo = signo;
+
+#if defined(__unix__)
+        struct sigaction action;
         memset(&action, 0x00, sizeof(action));
         action.sa_flags = (int)(SA_SIGINFO | SA_ONSTACK | SA_NODEFER | SA_RESETHAND);
         sigfillset(&action.sa_mask);
@@ -150,7 +225,11 @@ WANDER_FUN(wander_handlers_t*) wander_install_handlers(const int signals[])
         action.sa_sigaction = &wander_sigaction_handler;
 
         sigaction(signo, &action, &handlers->handlers[i].old_sigaction);
+#endif
     }
+#if defined(_WIN32)
+    handlers->old_se_handler = SetUnhandledExceptionFilter(wander_handle_win32_se);
+#endif
     if (wander_global.signal_handlers == NULL) {
         wander_global.signal_handlers = handlers;
     }
@@ -158,9 +237,11 @@ WANDER_FUN(wander_handlers_t*) wander_install_handlers(const int signals[])
 }
 WANDER_FUN(void) wander_uninstall_handlers(wander_handlers_t *handlers)
 {
+#if defined(__unix__)
     for (size_t i=0; i < handlers->num_handlers; i++) {
         sigaction(handlers->handlers[i].signo, &handlers->handlers[i].old_sigaction, NULL);
     }
+#endif
     if (handlers == wander_global.signal_handlers) {
         wander_global.signal_handlers = NULL;
     }

@@ -26,10 +26,6 @@
 #include <string.h>
 
 #include <unistd.h>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
 #define MAX(a, b) ((a) >= (b) ? (a) : (b))
 #define MIN(a, b) ((a) <= (b) ? (a) : (b))
@@ -37,6 +33,64 @@
 #define ARRAYSIZE(arr) (sizeof(arr) / sizeof(*arr))
 
 static void loadelf(struct dwarf *dwarf, const uint8_t *data, size_t size, struct dwarf_errinfo *errinfo);
+
+#if defined(__unix__)
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+static const uint8_t *mapfile(const char *filename, size_t *size) {
+    uint8_t *data = MAP_FAILED;
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) goto fail;
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) goto fail;
+    data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) goto fail;
+    if (size) *size = sb.st_size;
+
+    if (fd != -1) close(fd);
+    return data;
+
+fail:
+    if (data != MAP_FAILED) munmap(data, sb.st_size);
+    if (fd != -1) close(fd);
+    return NULL;
+}
+static void unmapfile(const uint8_t *data, size_t size) {
+    if (data) munmap((void *)data, size);
+}
+#else
+#include <windows.h>
+
+static const uint8_t *mapfile(const char *filename, size_t *size) {
+    SECURITY_ATTRIBUTES secAttrs;
+    secAttrs.nLength = sizeof(SECURITY_ATTRIBUTES);
+    secAttrs.lpSecurityDescriptor = NULL;
+    secAttrs.bInheritHandle = TRUE;
+    HANDLE hFile = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, &secAttrs, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+        goto fail;
+    ULARGE_INTEGER fileSize;
+    fileSize.LowPart = GetFileSize(hFile, &fileSize.HighPart);
+    if (size)
+        *size = fileSize.QuadPart;
+    HANDLE hFileMapping = CreateFileMappingA(hFile, &secAttrs, PAGE_READONLY, 0, 0, NULL);
+    if (!hFileMapping)
+        goto fail;
+    uint8_t *data = MapViewOfFile(hFileMapping, FILE_MAP_READ, 0, 0, fileSize.QuadPart);
+    return data;
+
+fail:
+    if (data) UnmapViewOfFile(data);
+    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+    return NULL;
+}
+static void unmapfile(const uint8_t *data, size_t size) {
+    if (data) UnmapViewOfFile(data);
+}
+#endif
 
 static void error(const char *str)
 {
@@ -587,28 +641,6 @@ static enum dw_cb_status die_cb(struct dwarf *dwarf, dwarf_unit_t *unit, dwarf_d
     return DW_CB_OK;
 }
 
-static const uint8_t *mapfile(const char *filename, size_t *size) {
-    uint8_t *data = MAP_FAILED;
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) goto fail;
-    struct stat sb;
-    if (fstat(fd, &sb) == -1) goto fail;
-    data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) goto fail;
-    if (size) *size = sb.st_size;
-
-    if (fd != -1) close(fd);
-    return data;
-
-fail:
-    if (data != MAP_FAILED) munmap(data, sb.st_size);
-    if (fd != -1) close(fd);
-    return data;
-}
-static void unmapfile(const uint8_t *data, size_t size) {
-    if (data != MAP_FAILED) munmap((void *)data, size);
-}
-
 int main(int argc, const char *argv[])
 {
     if (argc < 2) {
@@ -625,19 +657,19 @@ int main(int argc, const char *argv[])
     dwarf->abbrev_attr_cb = abbrev_attr_cb;
     size_t size = 0;
     const uint8_t *data = mapfile(argv[1], &size);
-    if (data == MAP_FAILED) {
+    if (!data) {
         perror(argv[1]);
         exit(1);
     }
     loadelf(dwarf, data, size, &errinfo);
-    if (data == MAP_FAILED) goto fail;
+    if (!data) goto fail;
     if (!dwarf_parse(dwarf, &errinfo)) {
         dwarf_write_error(&errinfo, &dweller_libc_stderr_writer);
     }
     flushoutput(buffer, buffersz);
 
 fail:
-    if (data == MAP_FAILED) perror(argv[1]);
+    if (!data) perror(argv[1]);
     unmapfile(data, size);
     if (dwarf_has_error(&errinfo)) {
         dwarf_write_error(&errinfo, &dweller_libc_stderr_writer);
