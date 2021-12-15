@@ -541,7 +541,6 @@ static int phdr_iterate_callback(struct dl_phdr_info *info, size_t size, void *u
                 close(object_file->fd);
                 return 0; // TODO: Signal error
             }
-            finish_setup(resolver, object_file);
         }
     }
 
@@ -555,6 +554,9 @@ static void load_object_files(wander_resolver_t *resolver)
             struct object_file *object_file = &resolver->object_files[i];
             Elf64_Ehdr *ehdr = (Elf64_Ehdr *)object_file->data;
             if (ehdr == NULL) continue; /* object file is not mapped */
+            if (i == 0) {
+                resolver->start_addr = object_file->base + ehdr->e_entry;
+            }
             bool is_libc = strstr(object_file->name, "/libc.so"); /* Do a very rough comparison so it works on multi-arch setups too */
             if (!is_libc) continue;
             Elf64_Shdr *shdrs = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff);
@@ -593,9 +595,6 @@ static void load_debug_sections(wander_resolver_t *resolver, struct object_file 
     Elf64_Shdr *shstrh = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize));
     char *shstrs = (char *)(object_file->data + shstrh->sh_offset);
     Elf64_Shdr *shdrs = (Elf64_Shdr *)(object_file->data + ehdr->e_shoff);
-    if (i == 0) {
-        resolver->start_addr = object_file->base + ehdr->e_entry;
-    }
     for (size_t j=0; j < ehdr->e_shnum; j++) {
         assert(sizeof(Elf64_Shdr) == ehdr->e_shentsize);
         Elf64_Shdr *shdr = &shdrs[j];
